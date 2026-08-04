@@ -8,7 +8,9 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://centravy:centravy@postgres:5432/centravy
+      # sslmode=disable is required: Medusa force-enables SSL for any host that
+      # isn't localhost/127.0.0.1, and the postgres:16-alpine image has SSL off.
+      DATABASE_URL: postgres://centravy:centravy@postgres:5432/centravy?sslmode=disable
       REDIS_URL: redis://redis:6379
 
   postgres:
