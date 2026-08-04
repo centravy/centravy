@@ -4,6 +4,18 @@
 
 Medusa DTC Starter — a Turborepo workspace monorepo containing a Medusa backend (`@medusajs/medusa` latest, Node 20+, PostgreSQL 15+) and an optional storefront (Next.js, Tanstack, etc...).
 
+## This Repo's Environment
+
+Facts that are specific to this project and not visible from the code. Setup steps live in [README.md](./README.md) — don't duplicate them here.
+
+- **Everything runs in a devcontainer**: the app container plus Postgres 16 and Redis 7 ([.devcontainer/docker-compose.yml](.devcontainer/docker-compose.yml)). Database and cache hosts are the compose service names `postgres` and `redis` — **not `localhost`**. The same devcontainer is used in Codespaces and locally.
+- **The devcontainer exports `DATABASE_URL`.** dotenv does not override a variable already in the environment, so `apps/backend/.env` is *ignored* for that key inside the container. Editing `.env` and expecting it to take effect is a trap; change `docker-compose.yml` and rebuild, or export the variable for a single command.
+- **Postgres serves no SSL, and Medusa force-enables SSL for any host that isn't `localhost`/`127.0.0.1`.** `medusa-config.ts` sets `databaseDriverOptions` explicitly to compensate; `DATABASE_SSL=true` re-enables TLS for a managed database. Do not remove that block as redundant — migrations fail with a *misleading* timeout, because the migration pool sets `propagateCreateError: false` and swallows the real error.
+- **Package manager is npm** (`package-lock.json`). Install with `--legacy-peer-deps`, as `create-medusa-app` does.
+- **Redis is running but unused.** `projectConfig.redisUrl` is unset, so Medusa logs `redisUrl not found` and uses in-memory caching, events, and locking. Expected, not a misconfiguration.
+- **There is no `apps/storefront/`.** This install is backend-only.
+- **Admin dashboard is at port 9000 `/app`.** In Codespaces it is only reachable through the forwarded URL from the PORTS panel; `localhost` will not resolve. `404` from that URL means the port is not forwarded, `502` means the backend is restarting — see the troubleshooting table in the README.
+
 ## Directory Structure
 
 ```text
@@ -94,8 +106,11 @@ cd apps/backend
 <pm> exec medusa db:generate <module-name>   # generate migrations for a custom module
 <pm> exec medusa db:migrate                  # run migrations
 <pm> exec medusa user -e admin@test.com -p supersecret
-<pm> run backend:seed                        # from root; seeds initial data
 ```
+
+**There is no seed command in this install.** The root `backend:seed` script filters for a `seed` task that `apps/backend` does not define, so it executes nothing and reports success. Initial data is seeded by `src/migration-scripts/initial-data-seed.ts`, which runs as part of `db:migrate`. Don't tell the user to run `backend:seed`.
+
+An admin user is not created by any of the above — `medusa user` is a required manual step on every fresh database.
 
 ## Medusa Skills & MCP Server
 
@@ -143,6 +158,10 @@ claude mcp add --transport http medusa https://docs.medusajs.com/mcp # or agent 
 - Writing raw SQL or importing DB clients directly in the backend instead of going through module services / workflows.
 - Calling the Medusa API from the storefront without `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY`; requests fail with a publishable-key error, not an obvious 401.
 - Running the test task without a reachable PostgreSQL — integration suites need a live DB.
+- Using `localhost` for Postgres or Redis from inside the devcontainer; they are the compose service names.
+- Editing `apps/backend/.env` to change `DATABASE_URL` inside the devcontainer — the exported environment variable wins and the edit appears to do nothing.
+- Trusting Medusa's database error messages at face value. A "connection timed out" or "pool is probably full" during `db:migrate` is usually a swallowed connection error, most often SSL.
+- Telling the user to run `backend:seed`, or assuming a fresh database has an admin user.
 - Silencing `@medusajs/*` ESLint rules instead of fixing the underlying pattern.
 
 ## Off-Limits
