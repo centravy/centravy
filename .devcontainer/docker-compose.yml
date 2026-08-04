@@ -1,0 +1,37 @@
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/typescript-node:22-bookworm
+    volumes:
+      - ../..:/workspaces:cached
+    command: sleep infinity
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://centravy:centravy@postgres:5432/centravy
+      REDIS_URL: redis://redis:6379
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: centravy
+      POSTGRES_PASSWORD: centravy
+      POSTGRES_DB: centravy
+    volumes:
+      - centravy-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U centravy -d centravy"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - centravy-redisdata:/data
+
+volumes:
+  centravy-pgdata:
+  centravy-redisdata:
