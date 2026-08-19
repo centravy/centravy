@@ -2,172 +2,265 @@
 
 ## Overview
 
-Medusa DTC Starter — a Turborepo workspace monorepo containing a Medusa backend (`@medusajs/medusa` latest, Node 20+, PostgreSQL 15+) and an optional storefront (Next.js, Tanstack, etc...).
+Centravy — a multi-supplier e-commerce orchestration platform. Suppliers submit
+products (photo + wholesale/retail prices), an operator validates them, and
+products are distributed across multiple sales channels at per-channel prices.
+Orders placed on any channel are routed back to the correct supplier.
+
+This is NOT a marketplace: the end customer never sees the supplier, and the
+supplier never sets the selling price.
+
+Turborepo + npm workspaces monorepo. Backend is Medusa 2.0 (Node 22,
+PostgreSQL, TypeScript) and is the single source of truth for all data.
+Frontends are thin clients over the Medusa API.
+
+**Architecture rule: the backend is always the middleman.** Nothing ever
+happens directly between a frontend and an external service.
+
+## Working with the Author
+
+The author is a senior AI/ML engineer (Python, MLOps, RAG) learning TypeScript,
+React, and web architecture through this project. A previous POC was built
+entirely by an agent without the author retaining any understanding — that
+outcome must not repeat. **Working code the author cannot explain is a failed
+task.**
+
+- **Explain the "why", not just the "what."** Web/JS/TS-specific patterns need
+  explaining; general programming concepts do not.
+- **Plan first, always.** Present the plan and wait for approval before writing
+  code. The plan is the real review checkpoint — architectural drift is visible
+  there and invisible in a 200-line diff.
+- **Never expand scope silently.** A helper, an abstraction, or a dependency
+  that wasn't discussed goes in the plan, not in the diff.
+- **When a task is the author's to write, scaffold nothing.** Answer questions
+  and review what he wrote; do not produce the implementation.
+- Deliver files as complete contents with their path, not terminal heredocs.
 
 ## This Repo's Environment
 
-Facts that are specific to this project and not visible from the code. Setup steps live in [README.md](./README.md) — don't duplicate them here.
+Facts specific to this project and not visible from the code.
 
-- **Everything runs in a devcontainer**: the app container plus Postgres 16 and Redis 7 ([.devcontainer/docker-compose.yml](.devcontainer/docker-compose.yml)). Database and cache hosts are the compose service names `postgres` and `redis` — **not `localhost`**. The same devcontainer is used in Codespaces and locally.
-- **The devcontainer exports `DATABASE_URL`.** dotenv does not override a variable already in the environment, so `apps/backend/.env` is *ignored* for that key inside the container. Editing `.env` and expecting it to take effect is a trap; change `docker-compose.yml` and rebuild, or export the variable for a single command.
-- **Postgres serves no SSL, and Medusa force-enables SSL for any host that isn't `localhost`/`127.0.0.1`.** `medusa-config.ts` sets `databaseDriverOptions` explicitly to compensate; `DATABASE_SSL=true` re-enables TLS for a managed database. Do not remove that block as redundant — migrations fail with a *misleading* timeout, because the migration pool sets `propagateCreateError: false` and swallows the real error.
-- **Package manager is npm** (`package-lock.json`). Install with `--legacy-peer-deps`, as `create-medusa-app` does.
-- **Redis is running but unused.** `projectConfig.redisUrl` is unset, so Medusa logs `redisUrl not found` and uses in-memory caching, events, and locking. Expected, not a misconfiguration.
-- **There is no `apps/storefront/`.** This install is backend-only.
-- **Admin dashboard is at port 9000 `/app`.** In Codespaces it is only reachable through the forwarded URL from the PORTS panel; `localhost` will not resolve. `404` from that URL means the port is not forwarded, `502` means the backend is restarting — see the troubleshooting table in the README.
+- **Everything runs in a GitHub Codespace devcontainer**
+  (`typescript-node:22-bookworm`), with Postgres 16 and Redis 7 as
+  docker-compose siblings. Their hosts are the compose service names `postgres`
+  and `redis` — **not `localhost`**. This setup exists because the author's work
+  machine has no admin rights and has restricted network access.
+- **Postgres serves no SSL, and Medusa force-enables SSL for any host that
+  isn't `localhost`/`127.0.0.1`.** The host is `postgres`, so the inference is
+  wrong and migrations fail with a *misleading* connection timeout — the real
+  error is swallowed by the migration pool. Two mechanisms compensate and
+  **both are intentional**: `?sslmode=disable` in the `DATABASE_URL` exported by
+  `.devcontainer/docker-compose.yml`, and the `databaseDriverOptions` block in
+  `medusa-config.ts`. Do not remove either as redundant. See D-003.
+- **Trust no Medusa database error at face value.** "Connection timed out" or
+  "pool is probably full" during `db:migrate` is almost always a swallowed
+  connection error, most often SSL.
+- **The devcontainer exports `DATABASE_URL` and `REDIS_URL`.** `loadEnv` does
+  not override a variable already present in the environment, so
+  `apps/backend/.env` is *ignored* for those keys inside the container. Editing
+  `.env` and expecting an effect is a trap — change
+  `.devcontainer/docker-compose.yml` and rebuild, or export the variable for a
+  single command.
+- **Redis runs but Medusa does not use it yet.** `projectConfig.redisUrl` is
+  unset, so Medusa logs `redisUrl not found` and falls back to in-memory
+  caching, events, and locking. Deliberate current state, not a
+  misconfiguration. See D-004.
+- **Named Docker volumes survive a devcontainer rebuild.** Rebuilding does not
+  reset the database; that requires removing the `centravy-pgdata` volume
+  explicitly.
+- **Backend-only for now.** `apps/supplier-portal/` and `apps/catalog/` are
+  planned React + Vite apps that do not exist yet. Check before referencing
+  them; never scaffold them unasked.
+- **Admin dashboard is at port 9000, path `/app`.** Reachable through the
+  Codespaces PORTS panel or the VSCode tunnel. `404` means the port isn't
+  forwarded; `502` means the backend is restarting.
+- **Codespaces quota is limited** (~30h/month on 4 cores). Don't leave
+  long-running processes idling.
 
 ## Directory Structure
 
 ```text
 .
 ├── apps/
-│   ├── backend/                  # Medusa application (@dtc/backend)
-│   │   ├── medusa-config.ts      # Medusa config: DB URL, CORS, secrets, modules
-│   │   ├── integration-tests/    # setup.js (Jest setupFiles) and http/*.spec.ts suites
-│   │   └── src/
-│   │       ├── admin/            # Admin dashboard extensions (widgets/, i18n/, routes)
-│   │       ├── api/              # API routes: api/store/*, api/admin/* (file-based)
-│   │       ├── jobs/             # Scheduled jobs
-│   │       ├── links/            # Module links between modules
-│   │       ├── migration-scripts/# Data migration scripts (e.g. initial-data-seed.ts)
-│   │       ├── modules/          # Custom modules (service + models + migrations)
-│   │       ├── subscribers/      # Event subscribers
-│   │       └── workflows/        # Workflows and workflow steps
-│   └── storefront/               # OPTIONAL storefront
-├── eslint.config.ts              # Root ESLint: @medusajs/eslint-plugin recommended
-├── turbo.json                    # Task graph: build, dev, start, lint, test, seed
+│   └── backend/                  # Medusa application
+│       ├── medusa-config.ts      # DB URL, SSL, CORS, secrets, module registration
+│       └── src/
+│           ├── admin/            # Admin dashboard extensions (routes/, widgets/)
+│           ├── api/              # File-based routes: api/admin/*, api/store/*
+│           ├── jobs/             # Scheduled jobs
+│           ├── links/            # Module links (defineLink)
+│           ├── modules/          # Custom modules (models + service + migrations)
+│           ├── subscribers/      # Event subscribers
+│           └── workflows/        # Workflows and steps
+├── docs/
+│   └── decisions.md              # ADRs — reasoning behind architectural choices
+├── .devcontainer/                # devcontainer.json + docker-compose.yml
+├── eslint.config.ts              # @medusajs/eslint-plugin recommended
+└── turbo.json                    # Task graph
 ```
 
-**`apps/storefront` is optional and may not exist.** It is skipped when the user chooses not to install it. Before running any storefront command, referencing storefront files, or assuming a full-stack change is possible, check that `apps/storefront/` exists. If it doesn't, the project is backend-only — do not scaffold it or suggest it was deleted by mistake.
-
-Each app can have its own nested `AGENTS.md`; agents read the nearest one in the directory tree, so put app-specific context there rather than expanding this file.
-
-## Package Manager
-
-**The package manager is chosen at install time and is not fixed.** Detect it before running anything, in this order:
-
-1. The `packageManager` field in the root `package.json` (e.g. `"pnpm@10.11.1"`) — authoritative when present.
-2. The lockfile at the repo root: `pnpm-lock.yaml` → pnpm, `yarn.lock` → yarn, `package-lock.json` → npm.
-
-```bash
-node -p "require('./package.json').packageManager ?? 'unset'"
-ls pnpm-lock.yaml yarn.lock package-lock.json bun.lock bun.lockb 2>/dev/null
-```
-
-Use that manager for every command and never introduce a second lockfile. Below, `<pm>` means the detected manager. The `<pm> run <script>` and `<pm> exec <bin>` forms work across npm, pnpm, yarn, and bun; workspace-filter flags do not, so the per-app commands below `cd` into the app instead.
+Each app may have its own nested `AGENTS.md`; agents read the nearest one in the
+tree. Put app-specific context there rather than expanding this file.
 
 ## Commands
 
-Run from the repo root unless noted. Turbo skips missing apps automatically.
-
-### Development
-
-```bash
-<pm> run dev                # all apps
-<pm> run backend:dev        # backend only (http://localhost:9000, admin at /app)
-<pm> run storefront:dev     # storefront only (http://localhost:8000)
-```
-
-### Build
+Run from the repo root unless noted. Package manager is **npm** (npm workspaces,
+`package-lock.json`). Never introduce a second lockfile.
 
 ```bash
-<pm> run build              # all apps
-<pm> run start              # build (via turbo dependsOn) then start
-```
-
-### Lint
-
-```bash
-<pm> run lint                          # all apps via turbo
-cd apps/backend && <pm> run lint       # medusa lint
-cd apps/storefront && <pm> run lint    # next lint
-```
-
-### Test (backend only; the storefront has no test suite)
-
-```bash
-<pm> run test                                              # all test tasks via turbo
-cd apps/backend && <pm> run test:unit                      # **/src/**/__tests__/**/*.unit.spec.ts
-cd apps/backend && <pm> run test:integration:modules       # **/src/modules/*/__tests__/**
-cd apps/backend && <pm> run test:integration:http          # **/integration-tests/http/*.spec.ts
-```
-
-Single test — pass a path/pattern through to Jest, keeping `TEST_TYPE`:
-
-```bash
-cd apps/backend && <pm> run test:unit -- src/modules/foo/__tests__/service.unit.spec.ts
-cd apps/backend && <pm> run test:unit -- -t "returns the cart"
+npm run dev                       # all apps via turbo
+cd apps/backend && npm run dev    # backend only — port 9000, admin at /app
+npm run build
+npm run lint
 ```
 
 ### Database
 
 ```bash
 cd apps/backend
-<pm> exec medusa db:generate <module-name>   # generate migrations for a custom module
-<pm> exec medusa db:migrate                  # run migrations
-<pm> exec medusa user -e admin@test.com -p supersecret
+npx medusa db:generate <module-name>   # generate migrations for a custom module
+npx medusa db:migrate                  # run migrations
+npx medusa user -e <email> -p <password>
 ```
 
-**There is no seed command in this install.** The root `backend:seed` script filters for a `seed` task that `apps/backend` does not define, so it executes nothing and reports success. Initial data is seeded by `src/migration-scripts/initial-data-seed.ts`, which runs as part of `db:migrate`. Don't tell the user to run `backend:seed`.
+An admin user is not created automatically — `medusa user` is a required manual
+step on every fresh database.
 
-An admin user is not created by any of the above — `medusa user` is a required manual step on every fresh database.
+There is no seed script in this install. Don't suggest one.
+
+## Invariants
+
+Non-negotiable. Violating one is a bug, not a style choice.
+
+- **No direct DB access.** Always go through the module's service. Never write
+  raw SQL or import a DB client in application code.
+- **No cross-module imports.** Modules are isolated. Cross-module data goes
+  through `defineLink` + `query.graph`, never through a direct import of another
+  module's service or model.
+- **Business logic lives in workflows**, not in route handlers. A route resolves
+  and runs a workflow; the workflow composes steps.
+- **Prices are integers, in cents, everywhere.** Backend, DB, API payloads,
+  frontend. Conversion to a display string happens at render time only.
+- **API errors are thrown as `MedusaError`.** Never return `{ error: ... }`.
+- **Naming:** `snake_case` for DB columns and API payloads, `camelCase` for TS
+  variables and functions, `PascalCase` for types and classes, `kebab-case` for
+  filenames.
+- **No new npm dependency without asking.** Ever.
+- **Look before you write.** Before creating a module, route, link, or admin
+  page, read the existing equivalent and follow its shape:
+  - module → `src/modules/supplier/`
+  - admin route → `src/api/admin/suppliers/route.ts`
+- **Use `export` / `export default`, never `module.exports`.**
+  `medusa-config.ts` uses CommonJS because it ships that way — it is not a
+  model to copy.
+- **No emojis** in code, comments, or commit messages.
+
+## Medusa 2.0 Gotchas
+
+Hard-won; re-check them on every generated diff.
+
+- Import `MedusaRequest` / `MedusaResponse` from `@medusajs/framework/http`
+  **without** the `type` keyword.
+- `query.graph` linked relation names are **singular**: `product.*`, not
+  `products.*`.
+- `MedusaService({ Supplier })` auto-generates **pluralized** method names:
+  `listSuppliers`, `createSuppliers`, `updateSuppliers`.
+- Products require at least one option and one variant at creation.
+- Editing a module's model without running `npx medusa db:generate <module>`
+  leaves the migration missing — the change silently never applies.
+- A custom module must be registered in `medusa-config.ts` under `modules` or it
+  does not exist: no service, no migrations.
+
+## Code Style
+
+- **The backend must satisfy `@medusajs/eslint-plugin`'s recommended config**
+  (`eslint.config.ts`). Its rules encode Medusa framework requirements — correct
+  route, workflow, and module shapes, not just cosmetics — so a lint failure
+  usually means the code is actually wrong. **Never disable a `@medusajs/*` rule
+  to make lint pass; fix the code.**
+- No formatter is configured. Match the style of surrounding files rather than
+  reformatting them.
+- Prefer explicit validation of environment variables over the non-null
+  assertion (`process.env.X!`). A server should refuse to start on incomplete
+  config rather than fail on the first request.
+
+## MVP Scope
+
+The MVP is a demo: a supplier photographs a shoe, the system generates the
+product page, the operator publishes it on Store A at 850 DH, a customer buys
+it, and the supplier receives the preparation request.
+
+**IN:** supplier product submission with images · admin validation
+(draft → published/rejected) · multi-channel publishing with per-channel
+pricing · minimal catalog page · order routing to suppliers via
+FulfillmentRequest · AI pipeline (Claude Vision) · basic usage counters.
+
+**OUT — flag as scope creep if proposed:** full supplier authentication
+(static tokens only, see D-002) · reseller portal · Stripe or real billing ·
+rewards and gamification · supplier mini-sites · inventory module and reminders ·
+external channel sync (Shopify, WooCommerce, Jumia, Facebook) · full Next.js
+storefront · mobile app and PWA · call center.
+
+Architectural decisions and their reasoning live in
+[docs/decisions.md](./docs/decisions.md). Read the relevant ADR before touching
+an area it covers — D-002 in particular, since "improving" token auth into real
+auth is exactly the drift it exists to prevent.
 
 ## Medusa Skills & MCP Server
 
-These are optional but strongly recommended — they give documentation-backed answers instead of guesses about Medusa APIs. **Use them when available; if they are not, mention to the user that installing them meaningfully improves development on this project.**
+The `medusa-dev` plugin gives documentation-backed answers instead of guesses
+about Medusa APIs. Load the relevant skill *before* writing code, not after:
 
-**Agentic skills** ([docs](https://docs.medusajs.com/learn/introduction/build-with-llms-ai/agentic-skills)) — if the `medusa-dev` skills are listed as available, load them *before* writing code, not after:
+- `building-with-medusa` — modules, API routes, workflows, data models, links
+- `building-admin-dashboard-customizations` — anything under `src/admin/`
+- `building-storefronts` — React/Vite frontends
 
-- `building-with-medusa` — any backend work: modules, API routes, workflows, data models, module links
-- `building-admin-dashboard-customizations` — anything under `apps/backend/src/admin`
-- `building-storefronts` — anything under `apps/storefront`
-- `db-generate` / `db-migrate` / `new-user` — the DB and user commands above
-
-If they are not installed, suggest:
+If not installed:
 
 ```bash
 /plugin marketplace add medusajs/medusa-agent-skills
 /plugin install medusa-dev@medusa
 ```
 
-**MCP server** ([docs](https://docs.medusajs.com/learn/introduction/build-with-llms-ai/mcp-server)) — a `medusa` MCP server exposing the official docs. Prefer it over web search or memory for any Medusa API, config, or upgrade question. If it is not connected, suggest:
+**These skills encode Medusa conventions, not Centravy's.** Where they conflict
+with the Invariants above, this file wins — stop and ask.
 
-```bash
-claude mcp add --transport http medusa https://docs.medusajs.com/mcp # or agent equivalent
-```
+## Git Workflow
 
-## Code Style
-
-- **The backend must satisfy `@medusajs/eslint-plugin`'s recommended config** (`eslint.config.ts`). Its rules encode Medusa framework requirements — correct route/workflow/module shapes, not just cosmetics — so a lint failure usually means the code is actually wrong, not just badly formatted. Never disable a `@medusajs/*` rule to make lint pass; fix the code.
-- No semicolons. Double quotes, 2-space indent.
-- Files: kebab-case. Types/classes: PascalCase. Functions/variables: camelCase. DB columns: snake_case.
-- No emojis in code, comments, or commit messages.
-
-## Conventions
-
-- **Backend routing is file-based.** A store endpoint is `src/api/store/<path>/route.ts` exporting `GET`/`POST`/etc. Don't add a router or register routes manually.
-- **Business logic belongs in workflows**, not in route handlers. Routes resolve and run a workflow; workflows compose steps.
-- Adding a task to `turbo.json` requires declaring its `outputs`, or Turbo will cache nothing/the wrong thing.
+- One Linear issue = one branch = one commit scope. Branch names: `cv-16-...`.
+- Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`).
+- **Commit before any destructive or large generative operation.**
+- Run `git status --short | grep -E "\.env|node_modules"` before every commit.
+  **The repository is public** — a leaked `.env` is a leaked secret.
+- Never commit without the author having read the diff.
 
 ## Common Mistakes
 
-- Running storefront commands without checking that `apps/storefront/` exists.
-- Assuming a package manager instead of detecting it, or running a command that creates a second lockfile.
-- Installing a dependency at the root instead of inside the app that needs it (`cd apps/backend && <pm> add <pkg>`).
-- Editing a custom module's model without running `<pm> exec medusa db:generate <module>` — the migration is missing and the change silently never applies.
-- Writing raw SQL or importing DB clients directly in the backend instead of going through module services / workflows.
-- Calling the Medusa API from the storefront without `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY`; requests fail with a publishable-key error, not an obvious 401.
-- Running the test task without a reachable PostgreSQL — integration suites need a live DB.
-- Using `localhost` for Postgres or Redis from inside the devcontainer; they are the compose service names.
-- Editing `apps/backend/.env` to change `DATABASE_URL` inside the devcontainer — the exported environment variable wins and the edit appears to do nothing.
-- Trusting Medusa's database error messages at face value. A "connection timed out" or "pool is probably full" during `db:migrate` is usually a swallowed connection error, most often SSL.
-- Telling the user to run `backend:seed`, or assuming a fresh database has an admin user.
-- Silencing `@medusajs/*` ESLint rules instead of fixing the underlying pattern.
+- Using `localhost` for Postgres or Redis from inside the devcontainer.
+- Removing the SSL handling in `medusa-config.ts` or `docker-compose.yml` as
+  redundant.
+- Editing `apps/backend/.env` to change `DATABASE_URL` inside the devcontainer —
+  the exported environment variable wins and the edit appears to do nothing.
+- Editing a model without running `db:generate`.
+- Reaching into another module's service or model directly instead of using a
+  link.
+- Putting business logic in a route handler instead of a workflow.
+- Storing a price as a float or a formatted string.
+- Creating a helper that duplicates an existing one three folders away — search
+  first.
+- Introducing an abstraction for a single use case.
+- Adding a dependency in passing without flagging it.
+- Assuming a fresh database has an admin user.
+- Referencing or scaffolding `apps/supplier-portal/` before it exists.
+- Silencing a `@medusajs/*` ESLint rule instead of fixing the pattern.
 
 ## Off-Limits
 
-- `apps/backend/.medusa/`, `.next/`, `dist/`, `out/`, `.turbo/` — build output, excluded from the workspace and regenerated.
-- The lockfile (`pnpm-lock.yaml`, `yarn.lock`, `package-lock.json` — whichever this install produced) — never hand-edit or delete; change it only as a side effect of a package manager command.
-- `.env` / `.env.local` — never commit, print, or copy secret values out of them. Edit `.env.template` instead when documenting a new variable.
-- Existing migrations in `src/modules/*/migrations/` — add a new migration rather than rewriting one that may already have run.
-- Don't run destructive DB commands (drops, `db:migrate --help`-style flags that reset state) against the user's database without explicit confirmation.
+- `apps/backend/.medusa/`, `dist/`, `.turbo/` — build output, regenerated.
+- `package-lock.json` — never hand-edit or delete; it changes only as a side
+  effect of an npm command.
+- `.env` / `.env.local` — never commit, print, or copy secret values out of
+  them. Document new variables in `.env.template` instead.
+- Existing migrations in `src/modules/*/migrations/` — add a new one rather than
+  rewriting one that may already have run.
+- Destructive DB commands (drops, resets) — never without explicit confirmation.
