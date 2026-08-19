@@ -55,3 +55,25 @@ Not acceptable for public signup.
 **To confirm with Rida.** Are pilot suppliers comfortable pasting a token
 into a form, or does the absence of a normal login hurt credibility during
 the demo? If it does, M3b returns to MVP scope and the demo date moves.
+
+---
+
+## D-003 — API token returned on creation only
+
+**Date:** 2026-08-19
+**Status:** decided
+
+**Decision.** `POST /admin/suppliers` returns `api_token` in the response.
+`GET /admin/suppliers` strips it.
+
+**Why.** There is no UI to reveal a token after the fact, so creation is the
+only moment the operator can read it and forward it to the supplier. Keeping
+it in the list endpoint would expose every supplier's credential on a route
+called for unrelated reasons.
+
+**What we lose.** A token lost after creation cannot be recovered — it has to
+be rotated. No rotation endpoint exists yet.
+
+**Follow-up.** If M4b brings a supplier portal, add a rotate endpoint rather
+than a reveal one.
+
