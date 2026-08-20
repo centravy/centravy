@@ -6,3 +6,5 @@ export const CreateSupplierSchema = z.object({
     phone: z.string().min(6),
     collection_address: z.string().optional(),
 })
+
+export const UpdateSupplierSchema = CreateSupplierSchema.partial()
