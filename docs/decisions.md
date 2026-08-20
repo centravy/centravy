@@ -77,3 +77,28 @@ be rotated. No rotation endpoint exists yet.
 **Follow-up.** If M4b brings a supplier portal, add a rotate endpoint rather
 than a reveal one.
 
+---
+
+## D-004 — The API token is generated inside the step, not by the caller
+
+**Date:** 2026-08-19
+**Status:** decided
+
+**Decision.** `createSupplierStep` generates `api_token` itself with
+`randomBytes(32)`. It is not part of the step's input type, so no caller can
+supply or choose it.
+
+**Why.** A secret that authenticates must never be chosen by whoever will use
+it — otherwise a supplier could pick another supplier's token and impersonate
+them. Putting the generation at the deepest layer makes that structural rather
+than a rule every caller has to remember. A future seed script or admin UI
+cannot get it wrong by omission.
+
+**What we lose.** The step is no longer deterministic: the same input produces
+a different row each run. That makes it harder to assert on in a test — a test
+has to read the token back from the result instead of comparing against a
+fixture.
+
+**Rejected alternative.** Caller-supplied token: keeps the step a pure function
+of its input and easier to test, but moves a security guarantee into the
+discipline of every call site.

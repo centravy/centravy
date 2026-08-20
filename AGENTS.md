@@ -144,7 +144,7 @@ Non-negotiable. Violating one is a bug, not a style choice.
 - **API errors are thrown as `MedusaError`.** Never return `{ error: ... }`.
 - **Naming:** `snake_case` for DB columns and API payloads, `camelCase` for TS
   variables and functions, `PascalCase` for types and classes, `kebab-case` for
-  filenames.
+  filenames. `kebab-case` for workflow and step identifiers, matching the file name.
 - **No new npm dependency without asking.** Ever.
 - **Look before you write.** Before creating a module, route, link, or admin
   page, read the existing equivalent and follow its shape:

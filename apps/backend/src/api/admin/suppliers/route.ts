@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { SUPPLIER_MODULE } from "../../../modules/supplier";
 import SupplierModuleService from "../../../modules/supplier/service";
-import { randomBytes } from "node:crypto"
+import { createSupplierWorkflow } from "../../../workflows/create-supplier";
 
 type CreateSupplierBody = {
   name: string
@@ -19,17 +19,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     
 }
 
-export async function POST(req: MedusaRequest<CreateSupplierBody>, res:MedusaResponse) {
-    const service: SupplierModuleService = req.scope.resolve(SUPPLIER_MODULE);
-    const data = {
-        name: req.body.name,
-        email: req.body.email,
-        phone: req.body.phone,
-        collection_address: req.body.collection_address,
-        api_token: randomBytes(32).toString("hex")
-    };
+export async function POST(req: MedusaRequest<CreateSupplierBody>, res: MedusaResponse) {
+  const { result } = await createSupplierWorkflow(req.scope).run({
+    input: {
+      name: req.body.name,
+      email: req.body.email,
+      phone: req.body.phone,
+      collection_address: req.body.collection_address,
+    },
+  })
 
-    const supplier = await service.createSuppliers(data);
-    res.status(201).json({ supplier })
-
+  res.status(201).json({ supplier: result })
 }
