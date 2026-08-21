@@ -1,3 +1,17 @@
+> **Centravy note.** This file ships with the Medusa starter. It documents the
+> framework, not this project's conventions, and its examples break two of them.
+> [AGENTS.md](../../../../AGENTS.md) at the repo root is the source of truth.
+>
+> - **Only GET, POST and DELETE.** An update is `POST /resource/:id`, never PUT
+>   or PATCH — whatever the "Supported HTTP methods" list below says. See D-010
+>   in [docs/decisions.md](../../../../docs/decisions.md).
+> - **No `type` keyword on Medusa imports.** The examples below write
+>   `import type { MedusaRequest, MedusaResponse }`. We write
+>   `import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"`.
+>
+> Everything else here — file-based routing, path params, `req.scope`,
+> `defineMiddlewares` — is accurate and worth reading.
+
 # Custom API Routes
 
 An API Route is a REST API endpoint.
