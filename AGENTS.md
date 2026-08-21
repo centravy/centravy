@@ -40,18 +40,49 @@ task.**
 
 Facts specific to this project and not visible from the code.
 
-- **Everything runs in a GitHub Codespace devcontainer**
-  (`typescript-node:22-bookworm`), with Postgres 16 and Redis 7 as
-  docker-compose siblings. Their hosts are the compose service names `postgres`
-  and `redis` — **not `localhost`**. This setup exists because the author's work
-  machine has no admin rights and has restricted network access.
+- **Everything runs in a devcontainer** (`typescript-node:22-bookworm`), with
+  Postgres 16 and Redis 7 as docker-compose siblings. Their hosts are the
+  compose service names `postgres` and `redis` — **not `localhost`**. One
+  `.devcontainer/` serves both GitHub Codespaces and a local container on
+  Docker or OrbStack: same service names, same URLs, nothing to reconfigure.
+  Codespaces exists because the author's work machine has no admin rights and
+  has restricted network access; local is the default on his own machine.
+- **The compose file mounts the repo, not its parent** —
+  `..:/workspaces/centravy`, not the stock template's `../..:/workspaces`, which
+  locally would expose every sibling checkout to the container. See E-002.
+- **A fresh container installs dependencies and seeds `.env` itself** via
+  `postCreateCommand`. The `cp -n` never clobbers, so an existing `.env`
+  survives a rebuild.
+- **The machine sits behind a TLS-inspecting proxy, and this breaks builds but
+  not runtime.** OrbStack injects the host trust store into *running*
+  containers, so `docker run ... curl https://...` returns 200 — but
+  **BuildKit does not**, so the same call inside a `docker build` fails with
+  `curl: (60) ... unable to get local issuer certificate`. Devcontainer
+  **features install at build time**, which is why they are the thing that
+  breaks. The app image therefore comes from `${DEVCONTAINER_BASE_IMAGE:-...}`,
+  pointed by the gitignored `.devcontainer/.env` at a locally built image that
+  carries the proxy CA roots, whose build context lives outside the repo in
+  `~/.centravy-devcontainer/`. **Never commit the CA — the repository is
+  public.** See E-003.
+- **The same proxy swallows host port 9000 at runtime.** It accepts the
+  connection, answers `200 Connection Established` with a `Proxy-Agent` header,
+  then sends no body — so the browser shows `ERR_EMPTY_RESPONSE` and a 200 with
+  zero bytes while the backend is healthy inside the container. The compose file
+  publishes `${APP_HOST_PORT:-9000}:9000`; locally `.devcontainer/.env` sets
+  9009. Reach the admin at **`http://127.0.0.1:9009/app`** — `127.0.0.1`, *not*
+  `localhost`, which resolves to `::1` first on macOS and does not carry.
+  Medusa's startup banner says `http://localhost:9000/app`: correct inside the
+  container, wrong on the host in both the address and the port. See E-004.
+- **Zed reporting `DevContainerScriptsFailed` does not mean the container is
+  broken.** The `postCreateCommand` exits 0 when run directly, and the container
+  comes up fully usable. Verify before chasing it.
 - **Postgres serves no SSL, and Medusa force-enables SSL for any host that
   isn't `localhost`/`127.0.0.1`.** The host is `postgres`, so the inference is
   wrong and migrations fail with a *misleading* connection timeout — the real
   error is swallowed by the migration pool. Two mechanisms compensate and
   **both are intentional**: `?sslmode=disable` in the `DATABASE_URL` exported by
   `.devcontainer/docker-compose.yml`, and the `databaseDriverOptions` block in
-  `medusa-config.ts`. Do not remove either as redundant. See D-005.
+  `medusa-config.ts`. Do not remove either as redundant. See E-001.
 - **Trust no Medusa database error at face value.** "Connection timed out" or
   "pool is probably full" during `db:migrate` is almost always a swallowed
   connection error, most often SSL.
@@ -71,9 +102,23 @@ Facts specific to this project and not visible from the code.
 - **Backend-only for now.** `apps/supplier-portal/` and `apps/catalog/` are
   planned React + Vite apps that do not exist yet. Check before referencing
   them; never scaffold them unasked.
-- **Admin dashboard is at port 9000, path `/app`.** Reachable through the
-  Codespaces PORTS panel or the VSCode tunnel. `404` means the port isn't
-  forwarded; `502` means the backend is restarting.
+- **Admin dashboard is on container port 9000, path `/app`.** In Codespaces,
+  the forwarded URL from the PORTS panel. Locally the *host* port may differ:
+  the proxy swallows host port 9000, so `.devcontainer/.env` remaps it and the
+  working URL is <http://127.0.0.1:9009/app>. `404` means the port isn't
+  forwarded; `502` means the backend is restarting. See E-004.
+- **A zero-byte HTTP 200 from the host is the proxy, not the backend.** Checking
+  only the status code (`curl -o /dev/null -w "%{http_code}"`) *passes* while
+  nothing works — the giveaway is a `Proxy-Agent` header in the response and
+  `size_download=0`. Always measure the body size. The same request run inside
+  the container is the control.
+- **Never run `node`, `npm` or `npx` against this repo from the host.**
+  `node_modules/` sits on the bind mount and is visible from both sides, but it
+  is installed inside Linux and holds `@swc/core-linux-arm64-gnu`. On macOS the
+  same tree fails with `Cannot find module './swc.darwin-arm64.node'`. Editor
+  type-checking still works, because `.d.ts` files are platform-independent, so
+  only *execution* breaks. Running `npm install` from the host appears to fix it
+  and breaks the container instead.
 - **Codespaces quota is limited** (~30h/month on 4 cores). Don't leave
   long-running processes idling.
 
@@ -272,10 +317,29 @@ rather than silently picking one.
 - Run `git status --short | grep -E "\.env|node_modules"` before every commit.
   **The repository is public** — a leaked `.env` is a leaked secret.
 - Never commit without the author having read the diff.
+- **Propose a commit message whenever a unit of work leaves files changed**,
+  and never run `git commit`. Imperative subject under ~72 characters, body
+  explaining why rather than restating the diff. The author reads the diff
+  and commits.
 
 ## Common Mistakes
 
 - Using `localhost` for Postgres or Redis from inside the devcontainer.
+- Reading a failed devcontainer *feature* install as a network outage or a
+  broken feature. It is almost always the proxy CA missing from BuildKit.
+  The tell is the asymmetry: the same `curl` succeeds at runtime and fails
+  during a build.
+- Running `npx medusa ...` or `npm install` from a macOS terminal instead of
+  inside the container. The prompt is the tell: `node@<hash>:/workspaces/centravy$`
+  inside, `<user>@<machine> %` outside.
+- Using `localhost` rather than `127.0.0.1`, or port 9000 rather than the
+  published host port, to reach the backend from the host.
+- Reading a 200 with an empty body as a backend problem. Check the response
+  headers for a `Proxy-Agent` first, and compare against the same request made
+  inside the container.
+- Measuring an HTTP check with `curl -o /dev/null -w "%{http_code}"` alone. A
+  proxy tunnel returns 200 with zero bytes; always assert on `%{size_download}`
+  too.
 - Removing the SSL handling in `medusa-config.ts` or `docker-compose.yml` as
   redundant.
 - Editing `apps/backend/.env` to change `DATABASE_URL` inside the devcontainer —

@@ -7,6 +7,9 @@
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
   "forwardPorts": [9000],
+  // cp -n never clobbers an existing .env. Without one, medusa-config.ts reads
+  // STORE_CORS/ADMIN_CORS/AUTH_CORS as undefined instead of failing loudly.
+  "postCreateCommand": "npm install --legacy-peer-deps && cp -n apps/backend/.env.template apps/backend/.env",
   "portsAttributes": {
     "9000": {
       "label": "Medusa backend + admin",

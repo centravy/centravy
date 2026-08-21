@@ -1,9 +1,30 @@
 services:
   app:
-    image: mcr.microsoft.com/devcontainers/typescript-node:22-bookworm
+    # Defaults to the stock image, which is what Codespaces uses. A machine
+    # behind a TLS-inspecting proxy overrides this in .devcontainer/.env (which
+    # is gitignored) with a locally built image carrying the proxy CA roots.
+    # Features install at BUILD time, and BuildKit does not inherit the host
+    # trust store, so the CA has to be baked into the base image. See E-003.
+    image: ${DEVCONTAINER_BASE_IMAGE:-mcr.microsoft.com/devcontainers/typescript-node:22-bookworm}
     volumes:
-      - ../..:/workspaces:cached
+      # Mounts this repo only, not its parent. A relative source resolves against
+      # the directory holding this file, so ".." is the repo root both in a
+      # Codespace and on a local machine. The stock devcontainer template uses
+      # "../..:/workspaces", which is harmless in a Codespace (the parent holds
+      # only this repo) but on a local machine exposes every sibling checkout to
+      # the container. The target matches "workspaceFolder" in devcontainer.json.
+      # See E-002.
+      - ..:/workspaces/centravy:cached
     command: sleep infinity
+    # The container always listens on 9000; only the HOST side is variable.
+    # A TLS-inspecting proxy may transparently intercept well-known alternate
+    # HTTP ports, including 9000, and swallow the response -- the port accepts
+    # the connection and then returns nothing, so the browser reports an empty
+    # response while the backend is perfectly healthy inside the container.
+    # Such a machine sets APP_HOST_PORT in .devcontainer/.env (gitignored).
+    # Codespaces has no such file and keeps 9000. See E-004.
+    ports:
+      - "${APP_HOST_PORT:-9000}:9000"
     depends_on:
       postgres:
         condition: service_healthy

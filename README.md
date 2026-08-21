@@ -14,13 +14,14 @@ Backend-only for now. The starter supports an optional Next.js storefront under
 ### In the devcontainer (recommended)
 
 [.devcontainer/](.devcontainer/) defines the app container plus Postgres 16 and
-Redis 7. It works both in GitHub Codespaces and locally in VS Code with Docker
-and the Dev Containers extension — same service names, same URLs, nothing to
-reconfigure.
+Redis 7. It works both in GitHub Codespaces and locally in VS Code with the Dev
+Containers extension, on Docker Desktop or OrbStack — same service names, same
+URLs, nothing to reconfigure.
+
+Creating the container installs dependencies and copies `.env.template` to
+`.env` if you don't already have one, so start at `db:migrate`:
 
 ```bash
-npm install --legacy-peer-deps          # the flag create-medusa-app uses
-cp apps/backend/.env.template apps/backend/.env
 cd apps/backend
 npx medusa db:migrate                   # schema + initial seed data
 npx medusa user -e you@example.com -p <password>

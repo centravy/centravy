@@ -5,12 +5,50 @@ a business call from the CEO.
 
 Status: `decided` · `pending-rida` · `revisit-post-mvp`
 
+Scope: `design` — product, API and architecture choices that shape the
+code. `environment` — how this project is built and run on a given machine.
+The two use separate id sequences (`D-` and `E-`) so a renumbering in one
+never disturbs references to the other.
+
+
+## Index
+
+
+**Design**
+
+- [D-001 — No supplier activation state in the MVP](#d001)
+- [D-002 — Static token auth for the pilot (M3a), not real accounts (M3b)](#d002)
+- [D-003 — API token returned on creation only](#d003)
+- [D-004 — The API token is generated inside the step, not by the caller](#d004)
+- [D-006 — In-memory event bus until P4](#d006)
+- [D-007 — Match core Medusa where it ships an equivalent route](#d007)
+- [D-008 — Existence is checked in the route on reads](#d008)
+- [D-009 — Every mutation goes through a workflow, including single-call ones](#d009)
+- [D-010 — Update is `POST /admin/suppliers/:id`, not PATCH](#d010)
+
+**Environment**
+
+- [E-001 — SSL disabled in two places, deliberately](#e001)
+- [E-002 — The devcontainer mounts the repo, not its parent](#e002)
+- [E-003 — The base image is overridable, for TLS-inspected networks](#e003)
+- [E-004 — The host port is variable, the container port is not](#e004)
+
+`D-005` is retired: it became `E-001`. `D-011` onward remain free for new
+design decisions.
+
+
 ---
+
+
+# Design decisions
+
 
 ## D-001 — No supplier activation state in the MVP
 
+
 **Date:** 2026-08-17
 **Status:** pending-rida
+**Scope:** design
 **Linear:** CV-30
 
 **Decision.** The `supplier` model has no `is_active` / `status` field.
@@ -31,10 +69,13 @@ If yes, this comes back before the demo, not after.
 
 ---
 
+
 ## D-002 — Static token auth for the pilot (M3a), not real accounts (M3b)
+
 
 **Date:** 2026-08-17
 **Status:** pending-rida
+**Scope:** design
 **Linear:** CV-31
 
 **Decision.** Each supplier gets a static API token, generated at creation
@@ -58,10 +99,13 @@ the demo? If it does, M3b returns to MVP scope and the demo date moves.
 
 ---
 
+
 ## D-003 — API token returned on creation only
+
 
 **Date:** 2026-08-19
 **Status:** decided
+**Scope:** design
 
 **Decision.** `POST /admin/suppliers` returns `api_token` in the response.
 Every other endpoint strips it: the list route, the detail route, and the update
@@ -80,10 +124,13 @@ than a reveal one.
 
 ---
 
+
 ## D-004 — The API token is generated inside the step, not by the caller
+
 
 **Date:** 2026-08-19
 **Status:** decided
+**Scope:** design
 
 **Decision.** `createSupplierStep` generates `api_token` itself with
 `randomBytes(32)`. It is not part of the step's input type, so no caller can
@@ -104,36 +151,15 @@ fixture.
 of its input and easier to test, but moves a security guarantee into the
 discipline of every call site.
 
-## D-005 — SSL disabled in two places, deliberately
-
-**Date:** 2026-08-19
-**Status:** decided
-
-**Decision.** SSL is disabled for the database in two independent places:
-`?sslmode=disable` in the `DATABASE_URL` exported by
-`.devcontainer/docker-compose.yml`, and the `databaseDriverOptions` block in
-`medusa-config.ts`. Both stay.
-
-**Why.** Medusa infers SSL from the database host and force-enables it for
-anything that isn't `localhost`/`127.0.0.1`. In the devcontainer, Postgres is
-reached as the compose service name `postgres`, so the inference is wrong. The
-resulting failure is *misleading*: `db:migrate` reports a connection timeout
-because the migration pool sets `propagateCreateError: false` and swallows the
-real SSL error. This cost real debugging time once and must not cost it twice.
-
-The redundancy is intentional. Depending on the code path, Medusa may read the
-connection string or the driver options, and the two mechanisms cover different
-entry points. `DATABASE_SSL=true` re-enables TLS for a managed database.
-
-**What we lose.** Nothing in development. On Railway, `DATABASE_SSL=true` must
-be set explicitly at deploy time — it is not automatic.
-
 ---
+
 
 ## D-006 — In-memory event bus until P4
 
+
 **Date:** 2026-08-19
 **Status:** revisit-post-mvp
+**Scope:** design
 
 **Decision.** `projectConfig.redisUrl` is left unset in `medusa-config.ts`, even
 though Redis runs in the devcontainer and `REDIS_URL` is exported. Medusa logs
@@ -153,10 +179,13 @@ regardless.
 
 ---
 
+
 ## D-007 — Match core Medusa where it ships an equivalent route
+
 
 **Date:** 2026-08-20
 **Status:** decided
+**Scope:** design
 
 **Decision.** Where core Medusa already ships an equivalent route, its actual
 behaviour — response shape, status codes, HTTP method — is what we copy. REST
@@ -189,10 +218,13 @@ connection — look like a failure.
 
 ---
 
+
 ## D-008 — Existence is checked in the route on reads
+
 
 **Date:** 2026-08-20
 **Status:** decided
+**Scope:** design
 
 **Decision.** `GET /admin/suppliers/:id` runs an explicit `listSuppliers({ id })`
 check and throws `MedusaError(MedusaError.Types.NOT_FOUND)` before anything else
@@ -220,10 +252,13 @@ Same reasoning as D-004 — the guarantee belongs at the deepest layer.
 
 ---
 
+
 ## D-009 — Every mutation goes through a workflow, including single-call ones
+
 
 **Date:** 2026-08-20
 **Status:** decided
+**Scope:** design
 
 **Decision.** POST and DELETE on `/admin/suppliers/:id` call
 `updateSupplierWorkflow` and `deleteSupplierWorkflow` rather than calling the
@@ -251,10 +286,13 @@ future route, and the first exception is what makes the second one easy.
 
 ---
 
+
 ## D-010 — Update is `POST /admin/suppliers/:id`, not PATCH
+
 
 **Date:** 2026-08-20
 **Status:** decided
+**Scope:** design
 
 **Decision.** The supplier update route is `POST /admin/suppliers/:id`. No PATCH
 handler is exported, and the middleware entry registers the validator under
@@ -283,3 +321,162 @@ all-optional `UpdateSupplierSchema` says so.
 is what was originally specified. Rejected because the admin dashboard and the
 JS SDK speak POST for updates, and because an exception to "match core" taken on
 the first route it applies to is not an exception, it is a repeal.
+
+---
+
+
+# Environment decisions
+
+
+## E-001 — SSL disabled in two places, deliberately
+
+
+**Date:** 2026-08-19
+**Status:** decided
+**Scope:** environment
+
+**Decision.** SSL is disabled for the database in two independent places:
+`?sslmode=disable` in the `DATABASE_URL` exported by
+`.devcontainer/docker-compose.yml`, and the `databaseDriverOptions` block in
+`medusa-config.ts`. Both stay.
+
+**Why.** Medusa infers SSL from the database host and force-enables it for
+anything that isn't `localhost`/`127.0.0.1`. In the devcontainer, Postgres is
+reached as the compose service name `postgres`, so the inference is wrong. The
+resulting failure is *misleading*: `db:migrate` reports a connection timeout
+because the migration pool sets `propagateCreateError: false` and swallows the
+real SSL error. This cost real debugging time once and must not cost it twice.
+
+The redundancy is intentional. Depending on the code path, Medusa may read the
+connection string or the driver options, and the two mechanisms cover different
+entry points. `DATABASE_SSL=true` re-enables TLS for a managed database.
+
+**What we lose.** Nothing in development. On Railway, `DATABASE_SSL=true` must
+be set explicitly at deploy time — it is not automatic.
+
+---
+
+
+## E-002 — The devcontainer mounts the repo, not its parent
+
+
+**Date:** 2026-08-21
+**Status:** decided
+**Scope:** environment
+
+**Decision.** `.devcontainer/docker-compose.yml` binds `..` to
+`/workspaces/centravy`, rather than the stock devcontainer template's `../..` to
+`/workspaces`. One compose file serves both GitHub Codespaces and a local
+Docker/OrbStack devcontainer.
+
+**Why.** A relative bind-mount source resolves against the directory holding the
+compose file, so `../..` is the *parent* of the repo. In a Codespace that parent
+is `/workspaces` and contains only this checkout, so the template is harmless.
+On a development machine it is wherever the repo happens to live — here
+`~/source`, 61 unrelated checkouts and 14 GB — and every one of them becomes
+readable and writable from inside the container. Agents run in this container;
+the blast radius is the point.
+
+`..` is the repo root in both environments, so the narrower mount is not a
+local-only special case: it removes the divergence rather than branching on it.
+The target matches the `workspaceFolder` that `devcontainer.json` already
+declares.
+
+**What we lose.** The folder name `centravy` is now written in two places, the
+mount target and `workspaceFolder`. Renaming the checkout breaks both — though
+it breaks them together and visibly, at container start. Deviating from the
+stock template also means anyone copying this compose file into another project
+has to understand the change before adjusting it.
+
+**Rejected alternative.** A second devcontainer config under
+`.devcontainer/local/`, leaving the Codespaces one untouched: zero risk to a
+working setup, but two compose files to keep in sync, and drift between them
+would surface as an environment-specific bug — the same class of problem this
+repo already pays for once in E-001.
+
+---
+
+
+## E-003 — The base image is overridable, for TLS-inspected networks
+
+
+**Date:** 2026-08-21
+**Status:** decided
+**Scope:** environment
+
+**Decision.** `.devcontainer/docker-compose.yml` takes the app image from
+`${DEVCONTAINER_BASE_IMAGE:-mcr.microsoft.com/devcontainers/typescript-node:22-bookworm}`.
+On a machine behind a TLS-inspecting proxy, the gitignored `.devcontainer/.env`
+points that at a locally built image carrying the proxy CA roots. Codespaces
+has no such file and therefore uses the stock image, unchanged.
+
+**Why.** Devcontainer features install at *build* time. OrbStack injects the
+host trust store into *running* containers — `docker run` reaches HTTPS fine —
+but BuildKit does not, so the `github-cli` feature's installer died with
+`curl: (60) ... unable to get local issuer certificate`. The failure names the
+feature, not the proxy, which is what makes it expensive to diagnose.
+
+The CA has to be baked into the base image because the `Dockerfile.extended`
+that installs features is generated by the devcontainer CLI and is not ours to
+edit. The build context lives outside the repo, in `~/.centravy-devcontainer/`,
+because **the repository is public and that CA must never enter it**.
+The roots are split one per file: Debian's `update-ca-certificates` reads only
+the first certificate from a multi-cert file, so a single bundle silently
+registers one root and leaves the rest untrusted.
+
+**What we lose.** The local image is machine state that the repo cannot
+reproduce. A new machine behind the proxy has to rebuild it, and nothing but
+this ADR and AGENTS.md says how. The same rebuild is required whenever the
+proxy CA rotates, and the symptom then is a feature install failing again
+with a TLS error — the connection to an expired certificate will not be
+obvious.
+
+**Rejected alternative.** Dropping the `github-cli` feature. Simpler, and it
+would have removed the build step entirely, since the compose file otherwise
+uses a plain `image:`. Rejected because it trades a solved problem for a
+permanently degraded container, and because the next feature anyone adds walks
+into the same wall with no hint that it was ever solved.
+
+---
+
+
+## E-004 — The host port is variable, the container port is not
+
+
+**Date:** 2026-08-21
+**Status:** decided
+**Scope:** environment
+
+**Decision.** `.devcontainer/docker-compose.yml` publishes
+`${APP_HOST_PORT:-9000}:9000`. The container always listens on 9000. A machine
+whose network intercepts host port 9000 sets `APP_HOST_PORT` in the gitignored
+`.devcontainer/.env`; Codespaces has no such file and keeps 9000.
+
+**Why.** On the author's machine a TLS-inspecting proxy transparently captures
+host port 9000, and the failure is both silent and actively misleading. The TCP
+handshake succeeds, so nothing reports a refused connection. The browser shows
+`ERR_EMPTY_RESPONSE`. `curl` reports **HTTP 200 with a zero-byte body** and a
+a `Proxy-Agent` header that never came from Medusa — so a status-code
+check *passes* while nothing works. `--noproxy` does not help, because the
+capture is below HTTP.
+
+Two measurements settle it: the same request answered from inside the container
+returns 743 bytes in 0.3s, and a control container published on host port 8099
+answers instantly. Host-to-container networking is fine; the port is the
+variable.
+
+Only the host side moves. Keeping the container on 9000 means `medusa-config.ts`,
+the CORS entries, `.env.template`, the README and Codespaces all stay correct —
+the browser URL is the only thing that changes.
+
+**What we lose.** On this machine the admin is at `http://127.0.0.1:9009/app`
+while every document in the repo says 9000, so the README is locally wrong in a
+way only this ADR explains. The override is also invisible from the repo, since
+`.devcontainer/.env` is gitignored — a second machine behind the same proxy gets
+the same silent failure and no clue.
+
+**Rejected alternative.** Moving Medusa itself off 9000 via `PORT`. One port
+instead of a mapping is conceptually simpler, but it diverges from Codespaces
+and forces `.env.template`, the README and AGENTS.md to be edited to stay
+honest — spreading a machine-specific workaround across shared files.
+
