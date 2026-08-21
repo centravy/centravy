@@ -64,7 +64,8 @@ the demo? If it does, M3b returns to MVP scope and the demo date moves.
 **Status:** decided
 
 **Decision.** `POST /admin/suppliers` returns `api_token` in the response.
-`GET /admin/suppliers` strips it.
+Every other endpoint strips it: the list route, the detail route, and the update
+response.
 
 **Why.** There is no UI to reveal a token after the fact, so creation is the
 only moment the operator can read it and forward it to the supplier. Keeping
@@ -152,16 +153,24 @@ regardless.
 
 ---
 
-## D-007 — DELETE is idempotent and never 404s
+## D-007 — Match core Medusa where it ships an equivalent route
 
 **Date:** 2026-08-20
 **Status:** decided
 
-**Decision.** `DELETE /admin/suppliers/:id` always answers `200` with
-`{ id, object: "supplier", deleted: true }`, whether or not the supplier
-exists. It performs no existence check. GET and PATCH on the same path do 404.
+**Decision.** Where core Medusa already ships an equivalent route, its actual
+behaviour — response shape, status codes, HTTP method — is what we copy. REST
+principles lose to what core does.
 
-**Why.** Verified against core Medusa on this instance: calling
+**First application: DELETE is idempotent.** `DELETE /admin/suppliers/:id`
+always answers `200` with `{ id, object: "supplier", deleted: true }`, whether or
+not the supplier exists. It performs no existence check. GET and POST on the same
+path do 404.
+
+**Second application: the method.** An update is `POST /resource/:id`, never
+PATCH. Recorded separately in D-010 because it carries its own cost.
+
+**Why, for the delete.** Verified against core Medusa on this instance: calling
 `DELETE /admin/products/<id>` twice returns the same `200 {"deleted":true}`
 body both times. Where core already has an equivalent route, matching its shape
 and status codes costs nothing and means the admin dashboard, the JS SDK, and
@@ -169,26 +178,28 @@ any future client behave the same against our routes as against core's.
 Deriving a 404 from REST principles instead would make suppliers the one
 resource in the API that answers delete differently.
 
-**What we lose.** A typo'd or already-deleted id returns success with no signal,
-so a client cannot distinguish "I deleted it" from "it was never there". Any UI
-that needs that distinction has to GET first.
+**What we lose, on the delete.** A typo'd or already-deleted id returns success
+with no signal, so a client cannot distinguish "I deleted it" from "it was never
+there". Any UI that needs that distinction has to GET first.
 
-**Rejected alternative.** Guarding DELETE with the same 404 check as GET and
-PATCH: more informative in isolation, inconsistent with every other delete route
+**Rejected alternative.** Guarding DELETE with the same 404 check as GET: more
+informative in isolation, inconsistent with every other delete route
 in the product, and it makes a retried delete — the normal outcome of a flaky
 connection — look like a failure.
 
 ---
 
-## D-008 — Existence is checked in the route, before the write
+## D-008 — Existence is checked in the route on reads
 
 **Date:** 2026-08-20
 **Status:** decided
 
-**Decision.** GET and PATCH on `/admin/suppliers/:id` run an explicit
-`listSuppliers({ id })` check and throw
-`MedusaError(MedusaError.Types.NOT_FOUND)` before anything else happens. They do
-not rely on what the service does with an unknown id.
+**Decision.** `GET /admin/suppliers/:id` runs an explicit `listSuppliers({ id })`
+check and throws `MedusaError(MedusaError.Types.NOT_FOUND)` before anything else
+happens. The update route has no such check: `updateSupplierStep` already
+retrieves the row for its compensation snapshot, and `retrieveSupplier` throws
+NOT_FOUND on its own — inside `.run()`, so still before anything is written to
+the response.
 
 **Why.** The generated service methods disagree with each other on a missing
 row: `retrieveSupplier` throws, `updateSuppliers` and `softDeleteSuppliers` are
@@ -197,10 +208,10 @@ knowing which of the three you are looking at. An explicit guard makes the 404
 the first thing that happens on every handler that has one, and guarantees
 nothing has been written to the response when it fires.
 
-**What we lose.** One extra query per GET and PATCH — and PATCH pays for a
-second read inside `updateSupplierStep`, which snapshots the row for its
-compensation. Two reads and a write on a route that could be one read and a
-write.
+**What we lose.** Not a query: the row the check reads is the row GET returns.
+What it costs is asymmetry — two handlers on one path answer 404 by different
+mechanisms, and a reader has to know the update's 404 comes from a step two files
+away.
 
 **Rejected alternative.** Passing the row already read by the guard into the
 workflow as input: saves the second read, but moves the compensation snapshot
@@ -214,9 +225,10 @@ Same reasoning as D-004 — the guarantee belongs at the deepest layer.
 **Date:** 2026-08-20
 **Status:** decided
 
-**Decision.** PATCH and DELETE call `updateSupplierWorkflow` and
-`deleteSupplierWorkflow` rather than calling the service directly, even though
-each wraps a single service call and composes nothing.
+**Decision.** POST and DELETE on `/admin/suppliers/:id` call
+`updateSupplierWorkflow` and `deleteSupplierWorkflow` rather than calling the
+service directly, even though each wraps a single service call and composes
+nothing.
 
 **Why.** `npm run lint` reports
 `@medusajs/no-service-mutations-in-api-route` on `updateSuppliers` and
@@ -224,13 +236,50 @@ each wraps a single service call and composes nothing.
 per the ESLint policy in AGENTS.md. Beyond the rule: the two workflows carry
 compensations, which is where the `deleteSuppliers` / `softDeleteSuppliers`
 distinction had to be settled — writing them forced that question to be answered
-instead of assumed. Recorded here so nobody reopens it later as an oversight.
+instead of assumed. The update workflow also became the only place the update's
+404 comes from, which is what allowed the route-level guard to go (D-008).
+Recorded here so nobody reopens it later as an oversight.
 
 **What we lose.** Two directories and roughly sixty lines for what is
-`await service.updateSuppliers(...)`. A reader tracing PATCH now goes route to
-workflow to step before reaching the mutation.
+`await service.updateSuppliers(...)`. A reader tracing the update now goes route
+to workflow to step before reaching the mutation.
 
 **Rejected alternative.** Direct service calls in the handlers: shorter and
 still passes CI, since the rule is configured at `warn` and does not fail the
 build. Rejected because it makes "workflow or not" a judgement call on every
 future route, and the first exception is what makes the second one easy.
+
+---
+
+## D-010 — Update is `POST /admin/suppliers/:id`, not PATCH
+
+**Date:** 2026-08-20
+**Status:** decided
+
+**Decision.** The supplier update route is `POST /admin/suppliers/:id`. No PATCH
+handler is exported, and the middleware entry registers the validator under
+`method: "POST"`.
+
+**Why.** Core Medusa ships no PATCH handler anywhere:
+
+```bash
+grep -rlE "exports\.PATCH ?=" node_modules/@medusajs/medusa/dist/api/   # no output
+```
+
+`/admin/products/[id]/route.js` exports GET, POST and DELETE, and the update is
+the POST — it runs `updateProductsWorkflow` and answers `200 { product }`. The
+`medusa-dev` skill states the same rule as `arch-http-methods`: GET, POST and
+DELETE only. This is the rule recorded in D-007, applied to the method, so PATCH
+would have made suppliers an exception to a rule written in the same commit.
+
+**What we lose.** POST now means two things on one resource: create at
+`/admin/suppliers`, update at `/admin/suppliers/:id`. Anyone arriving from
+ordinary REST reads that as wrong, and the route file gives no hint that the
+choice was deliberate — hence the comment above the handler pointing here.
+A partial update also no longer announces itself in the method; only the
+all-optional `UpdateSupplierSchema` says so.
+
+**Rejected alternative.** Keeping PATCH: semantically nicer in isolation, and it
+is what was originally specified. Rejected because the admin dashboard and the
+JS SDK speak POST for updates, and because an exception to "match core" taken on
+the first route it applies to is not an exception, it is a repeal.
