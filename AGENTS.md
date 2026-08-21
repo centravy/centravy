@@ -51,7 +51,7 @@ Facts specific to this project and not visible from the code.
   error is swallowed by the migration pool. Two mechanisms compensate and
   **both are intentional**: `?sslmode=disable` in the `DATABASE_URL` exported by
   `.devcontainer/docker-compose.yml`, and the `databaseDriverOptions` block in
-  `medusa-config.ts`. Do not remove either as redundant. See D-003.
+  `medusa-config.ts`. Do not remove either as redundant. See D-005.
 - **Trust no Medusa database error at face value.** "Connection timed out" or
   "pool is probably full" during `db:migrate` is almost always a swallowed
   connection error, most often SSL.
@@ -64,7 +64,7 @@ Facts specific to this project and not visible from the code.
 - **Redis runs but Medusa does not use it yet.** `projectConfig.redisUrl` is
   unset, so Medusa logs `redisUrl not found` and falls back to in-memory
   caching, events, and locking. Deliberate current state, not a
-  misconfiguration. See D-004.
+  misconfiguration. See D-006.
 - **Named Docker volumes survive a devcontainer rebuild.** Rebuilding does not
   reset the database; that requires removing the `centravy-pgdata` volume
   explicitly.
@@ -126,7 +126,11 @@ npx medusa user -e <email> -p <password>
 An admin user is not created automatically — `medusa user` is a required manual
 step on every fresh database.
 
-There is no seed script in this install. Don't suggest one.
+The starter's seed lives at `src/migration-scripts/initial-data-seed.ts` and runs
+automatically as part of `db:migrate` — that is where the demo regions, products
+and sales channels came from. Migration scripts are tracked in the
+`script_migrations` table and never run twice, so there is no re-seed command and
+no standalone seed script. Don't add one.
 
 ## Invariants
 
@@ -137,14 +141,35 @@ Non-negotiable. Violating one is a bug, not a style choice.
 - **No cross-module imports.** Modules are isolated. Cross-module data goes
   through `defineLink` + `query.graph`, never through a direct import of another
   module's service or model.
-- **Business logic lives in workflows**, not in route handlers. A route resolves
-  and runs a workflow; the workflow composes steps.
+- **Business logic lives in workflows**, not in route handlers. A route that
+  mutates resolves and runs a workflow; the workflow composes steps. A read may
+  call the module service directly — the list and detail routes do, and D-008
+  covers the 404 that goes with it.
+- **Every mutation goes behind a workflow**, with no exception for one-liners.
+  Any `create*`, `update*`, `delete*`, `softDelete*`, or `restore*` service call
+  belongs in a step, never in a route handler —
+  `@medusajs/no-service-mutations-in-api-route` names the full prefix list. See
+  D-009.
+- **Match core Medusa when it already has an equivalent route.** Before choosing
+  a response shape, a status code, or a method, call the core route
+  (`/admin/products/:id`, ...) and copy what it does. Core's actual behaviour
+  wins over REST principles. See D-007.
+- **Only GET, POST and DELETE.** An update is `POST /resource/:id`, never PATCH
+  or PUT. Core ships no PATCH handler anywhere — check with
+  `grep -rlE "exports\.PATCH ?=" node_modules/@medusajs/medusa/dist/api/`. See
+  D-010.
 - **Prices are integers, in cents, everywhere.** Backend, DB, API payloads,
   frontend. Conversion to a display string happens at render time only.
-- **API errors are thrown as `MedusaError`.** Never return `{ error: ... }`.
+- **API errors are thrown as `MedusaError`.** Never return `{ error: ... }`, and
+  never `res.status(4xx)` — throw `MedusaError.Types.NOT_FOUND` /
+  `INVALID_DATA` and let the framework map it to a status.
+- **`api_token` is returned only by creation.** Every other endpoint strips it —
+  the list route, the detail route, and the update response. See D-003.
 - **Naming:** `snake_case` for DB columns and API payloads, `camelCase` for TS
   variables and functions, `PascalCase` for types and classes, `kebab-case` for
-  filenames.
+  filenames. `kebab-case` for workflow and step identifiers: a step id matches its
+  filename, a workflow id matches its directory — the workflow itself is always
+  `index.ts`.
 - **No new npm dependency without asking.** Ever.
 - **Look before you write.** Before creating a module, route, link, or admin
   page, read the existing equivalent and follow its shape:
@@ -165,6 +190,16 @@ Hard-won; re-check them on every generated diff.
   `products.*`.
 - `MedusaService({ Supplier })` auto-generates **pluralized** method names:
   `listSuppliers`, `createSuppliers`, `updateSuppliers`.
+- `delete<Models>` (`deleteSuppliers`) is a **hard** delete returning
+  `Promise<void>` — nothing can undo it. The restorable pair is
+  `softDelete<Models>` + `restore<Models>`. A step whose compensation must put
+  the row back has to soft-delete.
+- DML generates **partial** unique indexes (`WHERE deleted_at IS NULL`), so a
+  soft-deleted row does not block re-creating one with the same unique value.
+- A row read back from the database types a nullable column as `string | null`,
+  while a validated update body types the same field `string | undefined`. A
+  compensation payload built from a read needs its own type; reusing the step's
+  input type fails to compile.
 - Products require at least one option and one variant at creation.
 - Editing a module's model without running `npx medusa db:generate <module>`
   leaves the migration missing — the change silently never applies.
@@ -206,24 +241,28 @@ Architectural decisions and their reasoning live in
 an area it covers — D-002 in particular, since "improving" token auth into real
 auth is exactly the drift it exists to prevent.
 
-## Medusa Skills & MCP Server
+## Medusa Skills
 
-The `medusa-dev` plugin gives documentation-backed answers instead of guesses
-about Medusa APIs. Load the relevant skill *before* writing code, not after:
+The `medusa-dev` plugin ships skills as local markdown under
+`~/.claude/plugins/cache/medusa/medusa-dev/*/skills/`. They work offline and
+do not depend on any server. The `MedusaDocs` MCP server that shipped with the
+plugin is disabled (HTTP 402, paid plan) — the skills are unaffected.
 
-- `building-with-medusa` — modules, API routes, workflows, data models, links
-- `building-admin-dashboard-customizations` — anything under `src/admin/`
-- `building-storefronts` — React/Vite frontends
+**Before presenting a plan that touches any of these, read the matching
+reference file and say in the plan which one you read:**
 
-If not installed:
+| Touching | Read |
+|---|---|
+| workflows, steps, compensation | `building-with-medusa/reference/workflows.md` |
+| `defineLink`, cross-module data | `building-with-medusa/reference/module-links.md` |
+| API routes | `building-with-medusa/reference/api-routes.md` |
+| models, migrations | `building-with-medusa/reference/data-models.md` |
+| subscribers, events | `building-with-medusa/reference/subscribers-and-events.md` |
+| anything under `src/admin/` | `building-admin-dashboard-customizations/SKILL.md` |
 
-```bash
-/plugin marketplace add medusajs/medusa-agent-skills
-/plugin install medusa-dev@medusa
-```
-
-**These skills encode Medusa conventions, not Centravy's.** Where they conflict
-with the Invariants above, this file wins — stop and ask.
+**These skills encode Medusa conventions, not Centravy's.** Where they
+conflict with the Invariants above, this file wins — but say so in the plan
+rather than silently picking one.
 
 ## Git Workflow
 
@@ -245,6 +284,14 @@ with the Invariants above, this file wins — stop and ask.
 - Reaching into another module's service or model directly instead of using a
   link.
 - Putting business logic in a route handler instead of a workflow.
+- Designing a route's response shape, status codes, or method from REST
+  principles when core Medusa already ships an equivalent route — check its real
+  response first.
+- Using PATCH or PUT for an update. Core uses POST on the detail path.
+- Treating a starter README under `src/` as a statement of this project's
+  conventions. They ship with `create-medusa-app` and document the framework;
+  AGENTS.md wins.
+- Assuming `deleteX` soft-deletes, and writing a compensation that cannot run.
 - Storing a price as a float or a formatted string.
 - Creating a helper that duplicates an existing one three folders away — search
   first.
@@ -264,3 +311,19 @@ with the Invariants above, this file wins — stop and ask.
 - Existing migrations in `src/modules/*/migrations/` — add a new one rather than
   rewriting one that may already have run.
 - Destructive DB commands (drops, resets) — never without explicit confirmation.
+
+## Build Order
+
+P6 Infra → P1/M1 Data Foundation → P1/M2 Submission Flow →
+P1/M3a Token auth → P1/M4a Submission form → P3 Multi-channel →
+P4 Order routing → P2 AI pipeline → P5 Billing.
+
+Current: P1/M1. Supplier module, admin CRUD routes and their workflows
+exist. The Product↔Supplier link and the admin pages do not yet.
+
+Task-level tracking lives in Linear, not in this repo. If this paragraph
+contradicts what you find in the code, trust the code and say so.
+
+Task detail lives in Linear (team CV), reachable through the Linear MCP.
+When a task references a CV-number, read the issue before planning — the
+`mode` label (T / R / D) determines whether you write the code at all.
