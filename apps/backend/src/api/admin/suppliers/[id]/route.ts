@@ -9,33 +9,31 @@ import z from "@medusajs/framework/zod";
 
 type UpdateSupplierBody = z.infer<typeof UpdateSupplierSchema>
 
-// The generated service methods disagree on a missing row, so the routes that
-// need a 404 check for themselves rather than relying on the service. Throwing
-// keeps the 404 ahead of any write to res.
-async function retrieveSupplierOr404(req: MedusaRequest, id: string) {
+// listSuppliers returns an empty array for an unknown id, so the read checks for
+// itself. Throwing keeps the 404 ahead of any write to res. See D-008.
+export async function GET(req: MedusaRequest, res: MedusaResponse) {
+    const { id } = req.params;
     const service: SupplierModuleService = req.scope.resolve(SUPPLIER_MODULE);
-    const [supplier] = await service.listSuppliers({ id });
+    const [found] = await service.listSuppliers({ id });
 
-    if (!supplier) {
+    if (!found) {
         throw new MedusaError(
             MedusaError.Types.NOT_FOUND,
             `Supplier with id "${id}" was not found`
         )
     }
 
-    return supplier
-}
-
-export async function GET(req: MedusaRequest, res: MedusaResponse) {
-    const { id } = req.params;
-    const { api_token, ...supplier } = await retrieveSupplierOr404(req, id);
+    const { api_token, ...supplier } = found;
 
     res.json({supplier});
 }
 
-export async function PATCH(req: MedusaRequest<UpdateSupplierBody>, res: MedusaResponse) {
+// POST, not PATCH: core Medusa updates a resource with POST on its detail path
+// and ships no PATCH handler anywhere. See D-010. No existence check either —
+// updateSupplierStep retrieves the row for its compensation snapshot and throws
+// NOT_FOUND itself.
+export async function POST(req: MedusaRequest<UpdateSupplierBody>, res: MedusaResponse) {
     const { id } = req.params;
-    await retrieveSupplierOr404(req, id);
 
     const { result } = await updateSupplierWorkflow(req.scope).run({
         input: { id, ...req.validatedBody },

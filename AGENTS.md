@@ -126,7 +126,11 @@ npx medusa user -e <email> -p <password>
 An admin user is not created automatically — `medusa user` is a required manual
 step on every fresh database.
 
-There is no seed script in this install. Don't suggest one.
+The starter's seed lives at `src/migration-scripts/initial-data-seed.ts` and runs
+automatically as part of `db:migrate` — that is where the demo regions, products
+and sales channels came from. Migration scripts are tracked in the
+`script_migrations` table and never run twice, so there is no re-seed command and
+no standalone seed script. Don't add one.
 
 ## Invariants
 
@@ -137,28 +141,35 @@ Non-negotiable. Violating one is a bug, not a style choice.
 - **No cross-module imports.** Modules are isolated. Cross-module data goes
   through `defineLink` + `query.graph`, never through a direct import of another
   module's service or model.
-- **Business logic lives in workflows**, not in route handlers. A route resolves
-  and runs a workflow; the workflow composes steps.
+- **Business logic lives in workflows**, not in route handlers. A route that
+  mutates resolves and runs a workflow; the workflow composes steps. A read may
+  call the module service directly — the list and detail routes do, and D-008
+  covers the 404 that goes with it.
 - **Every mutation goes behind a workflow**, with no exception for one-liners.
   Any `create*`, `update*`, `delete*`, `softDelete*`, or `restore*` service call
   belongs in a step, never in a route handler —
   `@medusajs/no-service-mutations-in-api-route` names the full prefix list. See
   D-009.
 - **Match core Medusa when it already has an equivalent route.** Before choosing
-  a response shape or a status code, call the core route
+  a response shape, a status code, or a method, call the core route
   (`/admin/products/:id`, ...) and copy what it does. Core's actual behaviour
   wins over REST principles. See D-007.
+- **Only GET, POST and DELETE.** An update is `POST /resource/:id`, never PATCH
+  or PUT. Core ships no PATCH handler anywhere — check with
+  `grep -rlE "exports\.PATCH ?=" node_modules/@medusajs/medusa/dist/api/`. See
+  D-010.
 - **Prices are integers, in cents, everywhere.** Backend, DB, API payloads,
   frontend. Conversion to a display string happens at render time only.
 - **API errors are thrown as `MedusaError`.** Never return `{ error: ... }`, and
   never `res.status(4xx)` — throw `MedusaError.Types.NOT_FOUND` /
   `INVALID_DATA` and let the framework map it to a status.
-- **`api_token` is never returned by a read endpoint.** The list route, the
-  detail route, and the PATCH response all strip it; creation is the only
-  endpoint that returns it. See D-003.
+- **`api_token` is returned only by creation.** Every other endpoint strips it —
+  the list route, the detail route, and the update response. See D-003.
 - **Naming:** `snake_case` for DB columns and API payloads, `camelCase` for TS
   variables and functions, `PascalCase` for types and classes, `kebab-case` for
-  filenames. `kebab-case` for workflow and step identifiers, matching the file name.
+  filenames. `kebab-case` for workflow and step identifiers: a step id matches its
+  filename, a workflow id matches its directory — the workflow itself is always
+  `index.ts`.
 - **No new npm dependency without asking.** Ever.
 - **Look before you write.** Before creating a module, route, link, or admin
   page, read the existing equivalent and follow its shape:
@@ -186,7 +197,7 @@ Hard-won; re-check them on every generated diff.
 - DML generates **partial** unique indexes (`WHERE deleted_at IS NULL`), so a
   soft-deleted row does not block re-creating one with the same unique value.
 - A row read back from the database types a nullable column as `string | null`,
-  while a validated patch body types the same field `string | undefined`. A
+  while a validated update body types the same field `string | undefined`. A
   compensation payload built from a read needs its own type; reusing the step's
   input type fails to compile.
 - Products require at least one option and one variant at creation.
@@ -273,8 +284,13 @@ rather than silently picking one.
 - Reaching into another module's service or model directly instead of using a
   link.
 - Putting business logic in a route handler instead of a workflow.
-- Designing a route's response shape or status codes from REST principles when
-  core Medusa already ships an equivalent route — check its real response first.
+- Designing a route's response shape, status codes, or method from REST
+  principles when core Medusa already ships an equivalent route — check its real
+  response first.
+- Using PATCH or PUT for an update. Core uses POST on the detail path.
+- Treating a starter README under `src/` as a statement of this project's
+  conventions. They ship with `create-medusa-app` and document the framework;
+  AGENTS.md wins.
 - Assuming `deleteX` soft-deletes, and writing a compensation that cannot run.
 - Storing a price as a float or a formatted string.
 - Creating a helper that duplicates an existing one three folders away — search

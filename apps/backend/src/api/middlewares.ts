@@ -10,7 +10,7 @@ export default defineMiddlewares({
     },
     {
       matcher: "/admin/suppliers/:id",
-      method: "PATCH",
+      method: "POST",
       middlewares: [validateAndTransformBody(UpdateSupplierSchema)],
     },
   ],
