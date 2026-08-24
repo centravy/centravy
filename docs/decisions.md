@@ -32,6 +32,7 @@ never disturbs references to the other.
 - [E-002 — The devcontainer mounts the repo, not its parent](#e002)
 - [E-003 — The base image is overridable, for TLS-inspected networks](#e003)
 - [E-004 — The host port is variable, the container port is not](#e004)
+- [E-005 — Two local modes, and they cannot coexist](#e005)
 
 `D-005` is retired: it became `E-001`. `D-011` onward remain free for new
 design decisions.
@@ -479,4 +480,48 @@ the same silent failure and no clue.
 instead of a mapping is conceptually simpler, but it diverges from Codespaces
 and forces `.env.template`, the README and AGENTS.md to be edited to stay
 honest — spreading a machine-specific workaround across shared files.
+---
 
+## E-005 — Two local modes, and they cannot coexist
+
+**Date:** 2026-08-21
+**Status:** decided
+**Scope:** environment
+
+**Decision.** The project supports two local modes: the devcontainer, or Medusa
+running natively on the host against a local Postgres. Both are documented and
+neither is deprecated. Locally they are **mutually exclusive**. Codespaces is a
+third environment and is unaffected by either.
+
+**Why.** The configuration cost of native mode is two lines in the gitignored
+`apps/backend/.env` -- a `localhost` `DATABASE_URL` and a `PORT`. Nothing in
+`medusa-config.ts` or `.devcontainer/` changes, which is why supporting both
+costs almost nothing in the repository itself. Native mode also dissolves two
+problems rather than working around them: with a `localhost` host Medusa stops
+force-enabling SSL, so E-001 becomes a no-op, and there is no build step, so
+E-003 does not apply. Measured startup is roughly 4s natively against about 25s
+in the container.
+
+The exclusivity is not a policy, it is a fact of the filesystem. `node_modules/`
+sits on the bind mount and is therefore one shared tree, but it holds native
+bindings for a single platform: `@swc/core-linux-arm64-gnu` in the container,
+`core-darwin-arm64` on macOS. Installing for one mode silently breaks the other,
+and the error blames a missing module rather than the wrong platform.
+`ls node_modules/@swc/` is the fastest way to see which mode the tree is in.
+
+**What we lose.** Switching modes costs a full `npm install` in the new
+location, so it is a deliberate move rather than something to do casually. Two
+modes also means two sets of instructions to keep true, and this file plus
+AGENTS.md are the only place the exclusivity is written down -- nothing in the
+code enforces or even hints at it.
+
+Native mode adds host-level state the repository cannot describe: a Postgres
+cluster on a non-default port, and the fact that `brew services` is broken on
+the author's machine, so the cluster does not restart after a reboot. The
+resulting Medusa error is the misleading connection failure E-001 warns about.
+
+**Rejected alternative.** Making native mode the only supported path and
+deleting `.devcontainer/`. Simpler, and it would retire E-002 and E-003 with it,
+but Codespaces is the fallback for a machine with no admin rights -- the
+constraint that created this setup in the first place, and one that has not
+gone away.

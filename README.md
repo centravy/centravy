@@ -30,7 +30,9 @@ cd ../.. && npm run backend:dev
 
 The backend listens on port 9000; the admin dashboard is at `/app`.
 
-- **Locally:** <http://localhost:9000/app>
+- **Locally:** <http://127.0.0.1:9009/app> — use `127.0.0.1`, not `localhost`,
+  which resolves to `::1` first on macOS. The host port is remapped from 9000
+  by `APP_HOST_PORT` in `.devcontainer/.env`; see Notes.
 - **In Codespaces:** use the forwarded URL from the **PORTS** panel, not
   `localhost`. It looks like `https://<codespace>-9000.app.github.dev/app`.
 
@@ -38,23 +40,40 @@ Migrations and the admin user are per-database, so both steps are needed on any
 machine with a fresh database. Seed data is applied by the `initial-data-seed`
 migration script during `db:migrate` — there is no separate seed command.
 
-### Against your own Postgres
+### Natively, without a container
 
-No Docker required. You need Node 20+ and a Postgres 15+ instance with a
-database and role that match your connection string.
+No Docker required. You need Node 22, and a Postgres 15+ instance with a role
+and database matching your connection string. Redis is not needed — nothing
+reads it yet (D-006).
 
 ```bash
-createdb centravy
+createuser -s centravy && createdb -O centravy centravy
 ```
 
-Then in `apps/backend/.env`, point `DATABASE_URL` at it:
+Then in `apps/backend/.env`:
 
 ```bash
 DATABASE_URL=postgres://centravy:centravy@localhost:5432/centravy
+PORT=9009
 ```
 
-The rest of the steps above are unchanged. Set `REDIS_URL` similarly if you run
-Redis, though nothing reads it yet — see Notes.
+Pick a `PORT` other than 9000 if a proxy on your machine intercepts it — the
+symptom is a zero-byte HTTP 200 (E-004). With a `localhost` host, Medusa no
+longer force-enables SSL, so the SSL handling in E-001 becomes a no-op.
+
+```bash
+npm install --legacy-peer-deps
+cd apps/backend
+npx medusa db:migrate
+npx medusa user -e you@example.com -p <password>
+cd ../.. && npm run backend:dev
+```
+
+**This is exclusive with the local dev container.** `node_modules/` sits on the
+bind mount and holds native bindings for one platform only: installing on the
+host replaces the Linux bindings with Darwin ones and breaks the container,
+and vice versa. Switching back means re-running `npm install` inside it.
+Codespaces is unaffected — it has its own tree. See E-005.
 
 ## Common tasks
 
@@ -64,7 +83,7 @@ Run from the repo root:
 npm run backend:dev     # start the backend in watch mode
 npm run build           # build all apps
 npm run lint            # @medusajs/eslint-plugin — its rules encode framework requirements
-npm test                # backend integration tests; needs a reachable database
+npm test                # no-op today: apps/backend defines no `test` script
 ```
 
 From `apps/backend/`:
@@ -123,10 +142,14 @@ cause:
 Check whether the backend itself is healthy before blaming the tunnel:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:9000/health
+curl -s -o /dev/null -w "status=%{http_code} bytes=%{size_download}\n" \
+  http://127.0.0.1:9000/health
 ```
 
-`200` means the backend is fine and the problem is port forwarding.
+`status=200` with a non-zero `bytes` means the backend is fine and the problem
+is port forwarding. **Always assert on the body size too:** a TLS-inspecting
+proxy answers `200` with zero bytes, so a status-only check passes while
+nothing works. See E-004.
 
 **`Could not connect to the database while running migrations`, reporting a
 timeout or a full connection pool.** The message rarely names the real cause:

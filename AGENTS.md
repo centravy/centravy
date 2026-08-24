@@ -40,7 +40,14 @@ task.**
 
 Facts specific to this project and not visible from the code.
 
-- **Everything runs in a devcontainer** (`typescript-node:22-bookworm`), with
+- **Two development modes, and they are mutually exclusive locally.** Either
+  the devcontainer, or Medusa running natively on the host against a local
+  Postgres. `node_modules/` lives on the bind mount and carries native bindings
+  for one platform only, so installing for one mode breaks the other. Check
+  which mode you are in before running anything: `ls node_modules/@swc/` shows
+  `core-darwin-arm64` (native) or `core-linux-arm64-gnu` (container).
+  Codespaces has its own tree and is never affected. See E-005.
+- **In the devcontainer** (`typescript-node:22-bookworm`), with
   Postgres 16 and Redis 7 as docker-compose siblings. Their hosts are the
   compose service names `postgres` and `redis` — **not `localhost`**. One
   `.devcontainer/` serves both GitHub Codespaces and a local container on
@@ -112,13 +119,14 @@ Facts specific to this project and not visible from the code.
   nothing works — the giveaway is a `Proxy-Agent` header in the response and
   `size_download=0`. Always measure the body size. The same request run inside
   the container is the control.
-- **Never run `node`, `npm` or `npx` against this repo from the host.**
-  `node_modules/` sits on the bind mount and is visible from both sides, but it
-  is installed inside Linux and holds `@swc/core-linux-arm64-gnu`. On macOS the
-  same tree fails with `Cannot find module './swc.darwin-arm64.node'`. Editor
-  type-checking still works, because `.d.ts` files are platform-independent, so
-  only *execution* breaks. Running `npm install` from the host appears to fix it
-  and breaks the container instead.
+- **Run `node`, `npm` and `npx` only where `node_modules` was installed.**
+  It sits on the bind mount and is visible from both sides, but it holds
+  bindings for one platform. In devcontainer mode that is
+  `@swc/core-linux-arm64-gnu`, and the same tree on macOS fails with
+  `Cannot find module './swc.darwin-arm64.node'`; in native mode it is the
+  mirror image. Editor type-checking works either way, because `.d.ts` files are
+  platform-independent, so only *execution* breaks. Running `npm install` in the
+  wrong place appears to fix it and breaks the other mode instead. See E-005.
 - **Codespaces quota is limited** (~30h/month on 4 cores). Don't leave
   long-running processes idling.
 
