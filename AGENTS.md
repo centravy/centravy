@@ -32,8 +32,11 @@ task.**
   there and invisible in a 200-line diff.
 - **Never expand scope silently.** A helper, an abstraction, or a dependency
   that wasn't discussed goes in the plan, not in the diff.
-- **When a task is the author's to write, scaffold nothing.** Answer questions
-  and review what he wrote; do not produce the implementation.
+- **A task the author reserves for himself gets no scaffolding.** Answer
+  questions and review what he wrote; do not produce the implementation. What is
+  reserved is his call, made per task — the Linear `mode` label is the default,
+  and a prompt that delegates the work overrides it. Say in the plan which way
+  it went and why.
 - Deliver files as complete contents with their path, not terminal heredocs.
 
 ## This Repo's Environment
@@ -397,5 +400,7 @@ Task-level tracking lives in Linear, not in this repo. If this paragraph
 contradicts what you find in the code, trust the code and say so.
 
 Task detail lives in Linear (team CV), reachable through the Linear MCP.
-When a task references a CV-number, read the issue before planning — the
-`mode` label (T / R / D) determines whether you write the code at all.
+When a task references a CV-number, read the issue before planning. The `mode`
+label (T / R / D) is the default answer to whether you write the code at all;
+an instruction in the prompt overrides it. Never resolve the conflict
+silently — name it in the plan.
