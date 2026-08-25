@@ -25,6 +25,8 @@ never disturbs references to the other.
 - [D-008 — Existence is checked in the route on reads](#d008)
 - [D-009 — Every mutation goes through a workflow, including single-call ones](#d009)
 - [D-010 — Update is `POST /admin/suppliers/:id`, not PATCH](#d010)
+- [D-011 — Integration tests target the routes, not the layers beneath](#d011)
+- [D-012 — Test fixtures are built through the container, not over HTTP](#d012)
 
 **Environment**
 
@@ -34,7 +36,7 @@ never disturbs references to the other.
 - [E-004 — The host port is variable, the container port is not](#e004)
 - [E-005 — Two local modes, and they cannot coexist](#e005)
 
-`D-005` is retired: it became `E-001`. `D-011` onward remain free for new
+`D-005` is retired: it became `E-001`. `D-013` onward remain free for new
 design decisions.
 
 
@@ -322,6 +324,82 @@ all-optional `UpdateSupplierSchema` says so.
 is what was originally specified. Rejected because the admin dashboard and the
 JS SDK speak POST for updates, and because an exception to "match core" taken on
 the first route it applies to is not an exception, it is a repeal.
+
+---
+
+
+## D-011 — Integration tests target the routes, not the layers beneath
+
+
+**Date:** 2026-08-25
+**Status:** decided
+**Scope:** design
+**Linear:** CV-33
+
+**Decision.** Integration tests assert on the HTTP contract only — status code,
+response shape, and the absence of `api_token`. Workflows, steps and services are
+never called directly from a test. `integration-tests/http/suppliers.spec.ts`
+reaches every supplier admin route through the `api` client and imports no
+workflow.
+
+**Why.** The route is the API contract, and it changes rarely. What sits under it
+will move: M2 adds product submission to the same module, M3a puts token auth in
+front of these routes, and the update path was already rewritten three times in
+two days. A test aimed at `updateSupplierStep` would have gone red on each of
+those rewrites without a single client-visible thing having broken. A suite that
+cries wolf on a rename gets deleted the third time it does it, and then there is
+no suite at all.
+
+**What we lose.** A 404 produced inside a step is observed from the route, and
+the test cannot say where it came from. Mutation testing made the cost concrete:
+replacing `retrieveSupplier` with a non-throwing `listSuppliers` inside
+`updateSupplierStep` left the suite green, because `updateSuppliers` throws
+NOT_FOUND on its own and the status the client sees never changed. The test only
+went red once both sources were neutralised. It guards the contract, not the
+location — which is the intended trade, but it means "the update's 404 comes from
+the step" (D-008) is documentation, not something the suite enforces.
+
+**Rejected alternative.** Step-level tests alongside the route tests: they would
+pin where each error originates, at the price of a second suite that breaks on
+every refactor of the layer most likely to be refactored. If the origin of a
+status ever becomes load-bearing, assert on the error *message* from the route
+instead — the two sources word it differently — rather than adding a suite.
+
+---
+
+
+## D-012 — Test fixtures are built through the container, not over HTTP
+
+
+**Date:** 2026-08-25
+**Status:** decided
+**Scope:** design
+**Linear:** CV-33
+
+**Decision.** Data a test needs to already exist is created through the module
+service resolved from `getContainer()`. Only the behaviour under test goes
+through the `api` client.
+
+**Why.** An update test must not fail because the create route is broken. Built
+over HTTP, one bad POST turns a single red test into eight, and the suite stops
+saying which contract broke — the thing it exists to say. Resolving the service
+is also faster: no HTTP round trip, no auth header, no validator.
+
+**What we lose.** Fixtures bypass the workflows, so anything a step generates has
+to be supplied by hand in the test. `api_token` is the current case: D-004 puts
+its generation inside `createSupplierStep` and deliberately keeps it out of the
+step's input type, while the column is non-nullable and unique — so a fixture
+passes an arbitrary value no real supplier would ever hold. D-004 anticipated
+this from the other side when it noted that a test has to read the token back
+from the result rather than compare against a fixture. Fixtures drift further
+from what the route actually produces every time a step gains logic, and nothing
+detects the drift.
+
+**Rejected alternative.** Creating fixtures through `POST /admin/suppliers`: one
+less thing to keep in sync with the model, and the row would carry a real
+generated token instead of a hand-written one. Rejected because it makes every
+test a test of the create route, which is the coupling this decision exists to
+remove.
 
 ---
 
