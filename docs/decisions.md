@@ -27,6 +27,7 @@ never disturbs references to the other.
 - [D-010 — Update is `POST /admin/suppliers/:id`, not PATCH](#d010)
 - [D-011 — Integration tests target the routes, not the layers beneath](#d011)
 - [D-012 — Test fixtures are built through the container, not over HTTP](#d012)
+- [D-013 — Medusa's own pricing module stores decimal amounts, not cents](#d013)
 
 **Environment**
 
@@ -36,7 +37,7 @@ never disturbs references to the other.
 - [E-004 — The host port is variable, the container port is not](#e004)
 - [E-005 — Two local modes, and they cannot coexist](#e005)
 
-`D-005` is retired: it became `E-001`. `D-013` onward remain free for new
+`D-005` is retired: it became `E-001`. `D-014` onward remain free for new
 design decisions.
 
 
@@ -400,6 +401,45 @@ less thing to keep in sync with the model, and the row would carry a real
 generated token instead of a hand-written one. Rejected because it makes every
 test a test of the create route, which is the coupling this decision exists to
 remove.
+
+---
+
+
+## D-013 — Medusa's own pricing module stores decimal amounts, not cents
+
+
+**Date:** 2026-08-25
+**Status:** decided
+**Scope:** design
+
+**Decision.** The "prices are integers, in cents, everywhere" invariant in
+AGENTS.md is scoped to data this project owns the storage for — the
+supplier's wholesale/retail price fields (not yet modeled) and any custom
+module payload. It does not describe core Medusa's pricing module. A price
+that goes into `@medusajs/pricing` (a per-channel selling price, P3) is
+stored and read as the decimal amount Medusa expects, and never multiplied or
+divided by 100 at that boundary.
+
+**Why.** `@medusajs/pricing`'s `price` model declares
+`amount: model.bigNumber()` — verified directly at
+`node_modules/@medusajs/pricing/dist/models/price.js:15` — a decimal column.
+The installed `medusa-dev` skill's price-format guidance agrees: prices are
+stored as-is (`49.99`), never ×100 on save or ÷100 on display. AGENTS.md's
+blanket "everywhere" was written before P3 existed and never checked against
+the pricing module specifically.
+
+**What we lose.** "Cents everywhere" was a one-sentence rule with no
+exceptions to remember. The corrected version has a boundary: code that reads
+or writes a Medusa core price (the pricing module, price sets, price lists)
+uses decimal amounts; code that owns its own price storage uses cents. A
+future contributor building the P3 per-channel pricing UI has to know which
+side of that boundary they're on.
+
+**Follow-up.** When the supplier wholesale/retail price fields are modeled
+(M2) and per-channel pricing is built (P3), name the conversion boundary
+explicitly in that plan — most likely the admin form, where an operator-typed
+decimal price becomes a Medusa pricing-module amount directly, with no cents
+representation in between.
 
 ---
 
