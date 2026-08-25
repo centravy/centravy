@@ -28,6 +28,8 @@ never disturbs references to the other.
 - [D-011 — Integration tests target the routes, not the layers beneath](#d011)
 - [D-012 — Test fixtures are built through the container, not over HTTP](#d012)
 - [D-013 — Medusa's own pricing module stores decimal amounts, not cents](#d013)
+- [D-014 — Submission enters as `proposed`, not `draft`](#d014)
+- [D-015 — The rejection reason lives in product `metadata`](#d015)
 
 **Environment**
 
@@ -37,7 +39,7 @@ never disturbs references to the other.
 - [E-004 — The host port is variable, the container port is not](#e004)
 - [E-005 — Two local modes, and they cannot coexist](#e005)
 
-`D-005` is retired: it became `E-001`. `D-014` onward remain free for new
+`D-005` is retired: it became `E-001`. `D-016` onward remain free for new
 design decisions.
 
 
@@ -440,6 +442,74 @@ side of that boundary they're on.
 explicitly in that plan — most likely the admin form, where an operator-typed
 decimal price becomes a Medusa pricing-module amount directly, with no cents
 representation in between.
+
+---
+
+
+## D-014 — Submission enters as `proposed`, not `draft`
+
+
+**Date:** 2026-08-25
+**Status:** decided
+**Scope:** design
+**Linear:** CV-19
+
+**Decision.** Medusa's product `status` enum ships four values: `draft`,
+`proposed`, `published`, `rejected`. The submission flow (CV-19) uses
+`proposed`.
+
+The state machine, in full:
+
+    proposed --approve--> published
+    proposed --reject---> rejected
+
+No other transition exists. Specifically: no un-publishing, no re-approving a
+rejected product, no return to `proposed`. `draft` is reserved for a future
+save-and-continue flow (M4b) and is never written by the MVP.
+
+**Why.** In the MVP, `proposed` and `draft` are indistinguishable —
+submission is a single call, so nothing ever sits in `draft`. The
+distinction is adopted now because it is free now and expensive later:
+adding it after the fact means a data migration plus rewriting every filter
+and guard that reads the status.
+
+**What we lose.** The pending-products page (CV-20) filters on
+`status = "proposed"`. Approve and reject reject any other source status
+with `409`, not `400`: the request is well-formed, the resource is in the
+wrong state.
+
+**Trigger to revisit.** M4b, when a supplier-side draft flow is introduced.
+At that point `draft` becomes reachable and the machine gains
+`draft -> proposed`.
+
+---
+
+
+## D-015 — The rejection reason lives in product `metadata`
+
+
+**Date:** 2026-08-25
+**Status:** decided
+**Scope:** design
+**Linear:** CV-22
+
+**Decision.** Rejecting a product (CV-22) accepts an optional reason. It is
+stored as `metadata.rejection_reason` — that exact key, nowhere else.
+Zod-validated, max 500 characters.
+
+**Why.** A history table is the correct model for a rejection reason, and
+belongs to Phase B, where supplier scorecards need it. The MVP has no
+resubmission path, so a product is rejected at most once and there is no
+history to lose. A dedicated column on a core Medusa entity would mean
+extending Product, which module isolation makes awkward for one nullable
+string.
+
+**What we lose.** `metadata` is untyped, so nothing at the type level
+prevents a key-name drift. The key is fixed here for that reason, and any
+code reading or writing it must cite D-015.
+
+**Trigger to revisit.** Resubmission after rejection. At that point the
+reason becomes a history entry, not a property of the product.
 
 ---
 

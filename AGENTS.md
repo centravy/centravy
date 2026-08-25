@@ -289,8 +289,8 @@ product page, the operator publishes it on Store A at 850 DH, a customer buys
 it, and the supplier receives the preparation request.
 
 **IN:** supplier product submission with images · admin validation
-(draft → published/rejected) · multi-channel publishing with per-channel
-pricing · minimal catalog page · order routing to suppliers via
+(proposed → published/rejected, see D-014) · multi-channel publishing with
+per-channel pricing · minimal catalog page · order routing to suppliers via
 FulfillmentRequest · AI pipeline (Claude Vision) · basic usage counters.
 
 **OUT — flag as scope creep if proposed:** full supplier authentication
