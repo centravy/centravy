@@ -244,8 +244,9 @@ Hard-won; re-check them on every generated diff.
 
 - Import `MedusaRequest` / `MedusaResponse` from `@medusajs/framework/http`
   **without** the `type` keyword.
-- `query.graph` linked relation names are **singular**: `product.*`, not
-  `products.*`.
+- `query.graph` linked relation names are singular on the non-`isList` side
+  and pluralized on the `isList: true` side — `product.*` from a one-relation,
+  `products.*` from a many-relation, not singular unconditionally.
 - `MedusaService({ Supplier })` auto-generates **pluralized** method names:
   `listSuppliers`, `createSuppliers`, `updateSuppliers`.
 - `delete<Models>` (`deleteSuppliers`) is a **hard** delete returning
@@ -266,8 +267,12 @@ Hard-won; re-check them on every generated diff.
 - `query.graph()` cannot filter by a property on a *linked* module — only on
   the base model's own fields. Filtering across a link (e.g. products by
   supplier) needs `query.index()` instead, with the linked property marked
-  `filterable` in the link definition. Matters for the upcoming
-  Product↔Supplier link.
+  `filterable` in the link definition. See `src/links/product-supplier.ts`.
+- `query.graph()`'s return type for a custom module's entity is inferred from
+  its DML model, which knows nothing about fields a link added — core-shipped
+  links carry pre-built type augmentation, a project's own links don't. The
+  linked field needs its own local type and a cast on the result, the same
+  way a compensation payload needs its own type (previous gotcha).
 
 ## Code Style
 

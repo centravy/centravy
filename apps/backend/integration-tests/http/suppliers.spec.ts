@@ -1,6 +1,7 @@
 import { medusaIntegrationTestRunner } from "@medusajs/test-utils";
 import jwt from "jsonwebtoken";
 import { InferTypeOf } from "@medusajs/framework/types";
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
 import { SUPPLIER_MODULE } from "../../src/modules/supplier";
 import Supplier from "../../src/modules/supplier/models/supplier";
 
@@ -237,6 +238,58 @@ medusaIntegrationTestRunner({
 
             expect(second.status).toEqual(200);
             expect(second.data.deleted).toBe(true);
+          });
+        });
+
+        describe("GET /admin/suppliers/:id/products", () => {
+          it("returns a product linked to the supplier, with both prices", async () => {
+            const container = getContainer();
+
+            // The integration test database only gets module migrations,
+            // not initial-data-seed.ts (that's a separate migration-scripts
+            // mechanism the test runner's migrateDatabase() doesn't invoke),
+            // so there is no seeded product here to find. Created through
+            // the container, per D-012.
+            const productService = container.resolve(Modules.PRODUCT);
+            const [product] = await productService.createProducts([
+              {
+                title: "CV-16 Test Product",
+                handle: "cv-16-test-product",
+                options: [{ title: "Size", values: ["One Size"] }],
+                variants: [
+                  {
+                    title: "One Size",
+                    options: { Size: "One Size" },
+                  },
+                ],
+              },
+            ]);
+
+            // Through the link utility directly, not HTTP. Same principle as
+            // D-012 (fixture the setup, not the thing under test), applied
+            // to the link utility instead of a module service.
+            const link = container.resolve(ContainerRegistrationKeys.LINK);
+            await link.create({
+              [Modules.PRODUCT]: { product_id: product.id },
+              [SUPPLIER_MODULE]: { supplier_id: supplier.id },
+              data: { wholesale_price: 5000, retail_price: 8500 },
+            });
+
+            const response = await api.get(
+              `/admin/suppliers/${supplier.id}/products`,
+              { headers },
+            );
+
+            expect(response.status).toEqual(200);
+            expect(response.data.products).toEqual(
+              expect.arrayContaining([
+                expect.objectContaining({
+                  id: product.id,
+                  wholesale_price: 5000,
+                  retail_price: 8500,
+                }),
+              ]),
+            );
           });
         });
       });
