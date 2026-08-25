@@ -246,7 +246,8 @@ Hard-won; re-check them on every generated diff.
   **without** the `type` keyword.
 - `query.graph` linked relation names are singular on the non-`isList` side
   and pluralized on the `isList: true` side — `product.*` from a one-relation,
-  `products.*` from a many-relation, not singular unconditionally.
+  `products.*` from a many-relation, not singular unconditionally. The
+  singular name is not a uniqueness guarantee. See D-016.
 - `MedusaService({ Supplier })` auto-generates **pluralized** method names:
   `listSuppliers`, `createSuppliers`, `updateSuppliers`.
 - `delete<Models>` (`deleteSuppliers`) is a **hard** delete returning

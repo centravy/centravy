@@ -30,6 +30,7 @@ never disturbs references to the other.
 - [D-013 — Medusa's own pricing module stores decimal amounts, not cents](#d013)
 - [D-014 — Submission enters as `proposed`, not `draft`](#d014)
 - [D-015 — The rejection reason lives in product `metadata`](#d015)
+- [D-016 — One supplier per product is a code-level invariant, not a database constraint](#d016)
 
 **Environment**
 
@@ -39,7 +40,7 @@ never disturbs references to the other.
 - [E-004 — The host port is variable, the container port is not](#e004)
 - [E-005 — Two local modes, and they cannot coexist](#e005)
 
-`D-005` is retired: it became `E-001`. `D-016` onward remain free for new
+`D-005` is retired: it became `E-001`. `D-017` onward remain free for new
 design decisions.
 
 
@@ -510,6 +511,47 @@ code reading or writing it must cite D-015.
 
 **Trigger to revisit.** Resubmission after rejection. At that point the
 reason becomes a history entry, not a property of the product.
+
+---
+
+
+## D-016 — One supplier per product is a code-level invariant, not a database constraint
+
+
+**Date:** 2026-08-25
+**Status:** decided
+**Scope:** design
+**Linear:** CV-16
+
+**Decision.** `product-supplier`'s `isList: true` on the product side
+controls query field naming only — `supplier.products` is an array,
+`product.supplier` is a single object — and creates no database constraint.
+Verified empirically during CV-16: `product_supplier`'s primary key is
+composite `(product_id, supplier_id)`; nothing prevents two rows sharing a
+`product_id`, i.e. one product linked to two suppliers. The failure mode is
+silent: with two such rows, `query.graph` on `product.supplier` returns one
+supplier rather than erroring, and which one is unspecified — exactly the
+question P4 order routing asks, needing exactly one answer.
+
+No unique index is added on `product_id`. The invariant is enforced at the
+write path instead: CV-19's submission workflow checks for an existing link
+before creating one, and fails loudly.
+
+**Why.** Multi-sourcing (the same physical product from two wholesalers,
+operator picks) is real business, Phase C at the earliest. The composite PK
+is the correct long-term shape; a unique index would have to be dropped when
+that arrives. Meanwhile the MVP write path cannot produce a duplicate by
+construction: each submission creates its own new product row, so two
+suppliers submitting the same sneaker produce two distinct products, not two
+links on one product.
+
+**What we lose.** Any code reading `product.supplier` may assume a single
+supplier, but only because CV-19 guarantees it, not because the schema does.
+Any new write path that creates link rows must carry the same guard and cite
+this ADR.
+
+**Trigger to revisit.** Multi-sourcing being introduced. At that point
+`product.supplier` becomes wrong at the API level, not just unconstrained.
 
 ---
 
