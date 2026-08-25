@@ -214,8 +214,10 @@ Non-negotiable. Violating one is a bug, not a style choice.
   or PUT. Core ships no PATCH handler anywhere — check with
   `grep -rlE "exports\.PATCH ?=" node_modules/@medusajs/medusa/dist/api/`. See
   D-010.
-- **Prices are integers, in cents, everywhere.** Backend, DB, API payloads,
-  frontend. Conversion to a display string happens at render time only.
+- **Prices are integers, in cents, everywhere this project owns the storage.**
+  Supplier price fields, custom module payloads, frontend display math.
+  Medusa's own pricing module stores decimal amounts (`model.bigNumber()`) —
+  never convert at that boundary. See D-013. Conversion to a display string happens at render time only.
 - **API errors are thrown as `MedusaError`.** Never return `{ error: ... }`, and
   never `res.status(4xx)` — throw `MedusaError.Types.NOT_FOUND` /
   `INVALID_DATA` and let the framework map it to a status.
@@ -261,6 +263,11 @@ Hard-won; re-check them on every generated diff.
   leaves the migration missing — the change silently never applies.
 - A custom module must be registered in `medusa-config.ts` under `modules` or it
   does not exist: no service, no migrations.
+- `query.graph()` cannot filter by a property on a *linked* module — only on
+  the base model's own fields. Filtering across a link (e.g. products by
+  supplier) needs `query.index()` instead, with the linked property marked
+  `filterable` in the link definition. Matters for the upcoming
+  Product↔Supplier link.
 
 ## Code Style
 
@@ -315,6 +322,12 @@ reference file and say in the plan which one you read:**
 | models, migrations | `building-with-medusa/reference/data-models.md` |
 | subscribers, events | `building-with-medusa/reference/subscribers-and-events.md` |
 | anything under `src/admin/` | `building-admin-dashboard-customizations/SKILL.md` |
+| querying data (`query.graph`, `query.index`) | `building-with-medusa/reference/querying-data.md` |
+| auth, protected routes, actor types | `building-with-medusa/reference/authentication.md` |
+| throwing/handling errors | `building-with-medusa/reference/error-handling.md` |
+| custom modules (service, migrations) | `building-with-medusa/reference/custom-modules.md` |
+| debugging Medusa-specific failures | `building-with-medusa/reference/troubleshooting.md` |
+| workflow hooks | `building-with-medusa/reference/workflow-hooks.md` |
 
 **These skills encode Medusa conventions, not Centravy's.** Where they
 conflict with the Invariants above, this file wins — but say so in the plan

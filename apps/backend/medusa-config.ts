@@ -1,6 +1,17 @@
-import { loadEnv, defineConfig } from '@medusajs/framework/utils'
+import { loadEnv, defineConfig, MedusaError } from '@medusajs/framework/utils'
 
 loadEnv(process.env.NODE_ENV || 'development', process.cwd())
+
+function requireEnv(name: string): string {
+  const value = process.env[name]
+  if (!value) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      `Missing required environment variable: ${name}`
+    )
+  }
+  return value
+}
 
 module.exports = defineConfig({
   projectConfig: {
@@ -23,9 +34,9 @@ module.exports = defineConfig({
       },
     },
     http: {
-      storeCors: process.env.STORE_CORS!,
-      adminCors: process.env.ADMIN_CORS!,
-      authCors: process.env.AUTH_CORS!,
+      storeCors: requireEnv('STORE_CORS'),
+      adminCors: requireEnv('ADMIN_CORS'),
+      authCors: requireEnv('AUTH_CORS'),
       jwtSecret: process.env.JWT_SECRET,
       cookieSecret: process.env.COOKIE_SECRET,
     }
