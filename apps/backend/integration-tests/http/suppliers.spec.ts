@@ -41,13 +41,13 @@ medusaIntegrationTestRunner({
         headers["authorization"] = `Bearer ${token}`;
       });
 
-      it("refuse une requête non authentifiée", async () => {
+      it("refuse an unauthenticated request", async () => {
         const error = await api.get("/admin/suppliers").catch((e) => e);
 
         expect(error.response.status).toEqual(401);
       });
 
-      it("accepte une requête authentifiée", async () => {
+      it("accepts an authenticated request", async () => {
         const response = await api.get("/admin/suppliers", { headers });
 
         expect(response.status).toEqual(200);
