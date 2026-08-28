@@ -153,13 +153,13 @@ script creates no suppliers, so the empty state comes first for free.
 
 ## 7. Wrap up
 
-- [ ] 7.1 Run `git status --short | grep -E "\.env|node_modules"` and confirm it
+- [x] 7.1 Run `git status --short | grep -E "\.env|node_modules"` and confirm it
       prints nothing before proposing a commit (AGENTS.md — the repository is
       public).
-- [ ] 7.2 Propose a conventional commit message (`feat: ...`) covering the two
+- [x] 7.2 Propose a conventional commit message (`feat: ...`) covering the two
       pages, the SDK client and the two dependency lines. Do not run
       `git commit` — the author reads the diff and commits.
-- [ ] 7.3 Decide whether the "declare what the admin bundle imports" rule earns
+- [x] 7.3 Decide whether the "declare what the admin bundle imports" rule earns
       an ADR as **D-019** (design.md Decision 3). If yes, write it into
       `docs/decisions.md` with its `What we lose` section and add it to the
       index; if no, say so and leave the reasoning in design.md, which is

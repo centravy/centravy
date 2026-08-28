@@ -36,6 +36,8 @@ be reopened later.
 - [D-015 — The rejection reason lives in product `metadata`](#d015)
 - [D-016 — One supplier per product is a code-level invariant, not a database constraint](#d016)
 - [D-017 — Local devcontainer abandoned, Codespaces retained](#d017)
+- [D-018 — Admin UI data access goes through js-sdk and react-query](#d018)
+- [D-019 — A package the admin code imports is declared, at an exact version](#d019)
 
 **Environment**
 
@@ -505,6 +507,8 @@ network access. That constraint has not gone away.
 - Any environment fact recorded from here on must state which mode it concerns.
   An unqualified environment fact goes stale the moment the mode changes.
 
+---
+
 
 ## D-018 — Admin UI data access goes through js-sdk and react-query
 
@@ -539,6 +543,49 @@ repo.
 **Note.** `fetch` not rejecting on 4xx/5xx remains true underneath; react-query
 surfaces an error only if the fetcher throws, and the js-sdk does that for us.
 
+---
+
+
+## D-019 — A package the admin code imports is declared, at an exact version
+
+**Date:** 2026-08-28 · **Status:** decided · **Scope:** design · **Linear:** CV-17
+
+**Decision.** Any package imported by code in this repo appears in
+`apps/backend/package.json`, even when Medusa already ships it as a transitive
+dependency. `@medusajs/*` packages are pinned to an exact version matching the
+rest of the Medusa tree — `"2.18.0"`, never `"^2.18.0"`. CV-17 declares
+`@medusajs/js-sdk` and `@medusajs/icons` on this basis; both already resolved at
+that exact version, so the lockfile gained only the two direct edges.
+
+**Named conflict, and how it is resolved.** The `medusa-dev` skill says the
+opposite: do not install packages the dashboard already provides. That advice is
+not carelessness — the dashboard is a single bundle, and a page importing
+`@medusajs/ui@4.3.0` while the bundle carries `4.2.0` can end up with two copies
+of the library, duplicated React contexts, and failures that are very hard to
+read. The skill is guarding against version skew.
+
+The exact pin removes that risk. A version without a caret cannot drift from the
+dashboard's. What remains is the guarantee the skill gives up: an undeclared
+import works only while npm hoists the package to the root of `node_modules`,
+and breaks the day `@medusajs/dashboard` drops the dependency or nests it behind
+a version conflict. That failure would surface as a build error in an unrelated
+ticket, with nothing pointing at the cause.
+
+**What we lose.** A Medusa upgrade is now a coordinated edit: the declared
+`@medusajs/*` lines must move with the rest of the tree, or this decision
+recreates exactly the skew the skill warns about. That coordination already
+existed — `@medusajs/medusa`, `framework`, `dashboard` and `ui` are declared
+too — but every new line widens it.
+
+**Scope of the rule.** It covers what this repo's code imports. A package that is
+only ever used transitively stays transitive; nothing needs declaring
+preemptively.
+
+**Rejected alternative.** Follow the skill and declare nothing, documenting that
+Medusa packages come from the dashboard. Simpler, one fewer line to keep in sync
+per package, and defensible. Rejected because the failure it accepts is silent
+and lands far from its cause, while the failure this decision accepts — a
+forgotten line during an upgrade — is loud and lands during the upgrade itself.
 
 ---
 
