@@ -35,7 +35,8 @@ yarn-error.log*
 # Local env files
 # Every .env variant is secret except the committed template. A narrow list
 # missed .env.test (which holds DB_PASSWORD, JWT_SECRET and COOKIE_SECRET) and
-# would also miss any .env.bak you make while switching modes. See E-005.
+# would also miss any ad-hoc .env.bak or .env.old left behind, so the glob is
+# deliberately broad.
 **/.env
 **/.env.*
 !**/.env.template
