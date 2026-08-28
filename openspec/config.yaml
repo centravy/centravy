@@ -14,11 +14,7 @@ context: |
   Cite the ADR number instead of restating its reasoning.
 
   Task detail lives in Linear, team CV, via the Linear MCP. A change named
-  cv-NN-* means: read issue CV-NN before writing the proposal. The issue's
-  mode label (T / R / D) says whether the author writes the code himself.
-
-  The author is a senior Python/ML engineer new to TypeScript and React.
-  Working code he cannot explain is a failed task.
+  cv-NN-* means: read issue CV-NN before writing the proposal.
 
 rules:
   proposal:
