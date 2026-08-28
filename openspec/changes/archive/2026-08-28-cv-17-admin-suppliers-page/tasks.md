@@ -120,7 +120,7 @@ script creates no suppliers, so the empty state comes first for free.
       `/admin/suppliers` request, then reload. The page shows the error message
       and no table (spec: *Request fails*, list). Restart the backend
       afterwards.
-- [ ] 6.4 **Create two suppliers** so the remaining states have data. From a
+- [x] 6.4 **Create two suppliers** so the remaining states have data. From a
       logged-in dashboard, in the browser console:
       `await fetch("/admin/suppliers", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ name: "Atlas Cuir", email: "atlas@example.test", phone: "+212600000001", collection_address: "12 Rue Test, Casablanca" }) }).then(r => r.json())`
       — then repeat with a second supplier that has **no** `collection_address`,
