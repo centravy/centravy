@@ -6,60 +6,37 @@ A [Medusa 2](https://docs.medusajs.com) commerce backend in a Turborepo workspac
 apps/backend/     # Medusa application (@dtc/backend) — API + admin dashboard at /app
 ```
 
-Backend-only for now. The starter supports an optional Next.js storefront under
-`apps/storefront/`, which has not been installed.
+Backend-only for now.
 
 ## Getting started
 
-### In the devcontainer (recommended)
+Two environments are supported: **natively on the host**, which is the default
+local mode, and **GitHub Codespaces**. Running the dev container locally is not
+supported — see D-017 in [docs/decisions.md](docs/decisions.md).
 
-[.devcontainer/](.devcontainer/) defines the app container plus Postgres 16 and
-Redis 7. It works both in GitHub Codespaces and locally in VS Code with the Dev
-Containers extension, on Docker Desktop or OrbStack — same service names, same
-URLs, nothing to reconfigure.
-
-Creating the container installs dependencies and copies `.env.template` to
-`.env` if you don't already have one, so start at `db:migrate`:
-
-```bash
-cd apps/backend
-npx medusa db:migrate                   # schema + initial seed data
-npx medusa user -e you@example.com -p <password>
-cd ../.. && npm run backend:dev
-```
-
-The backend listens on port 9000; the admin dashboard is at `/app`.
-
-- **Locally:** <http://127.0.0.1:9009/app> — use `127.0.0.1`, not `localhost`,
-  which resolves to `::1` first on macOS. The host port is remapped from 9000
-  by `APP_HOST_PORT` in `.devcontainer/.env`; see Notes.
-- **In Codespaces:** use the forwarded URL from the **PORTS** panel, not
-  `localhost`. It looks like `https://<codespace>-9000.app.github.dev/app`.
-
-Migrations and the admin user are per-database, so both steps are needed on any
-machine with a fresh database. Seed data is applied by the `initial-data-seed`
-migration script during `db:migrate` — there is no separate seed command.
-
-### Natively, without a container
+### Natively (the default)
 
 No Docker required. You need Node 22, and a Postgres 15+ instance with a role
 and database matching your connection string. Redis is not needed — nothing
-reads it yet (D-006).
+reads it (D-006).
 
 ```bash
 createuser -s centravy && createdb -O centravy centravy
 ```
 
-Then in `apps/backend/.env`:
+Then in `apps/backend/.env`, copied from
+[.env.template](apps/backend/.env.template):
 
 ```bash
-DATABASE_URL=postgres://centravy:centravy@localhost:5432/centravy
+DATABASE_URL=postgres://centravy:centravy@localhost:5434/centravy
 PORT=9009
 ```
 
-Pick a `PORT` other than 9000 if a proxy on your machine intercepts it — the
-symptom is a zero-byte HTTP 200 (E-004). With a `localhost` host, Medusa no
-longer force-enables SSL, so the SSL handling in E-001 becomes a no-op.
+`PORT` is read by the Medusa CLI, and is what puts the backend on 9009 rather
+than Medusa's default 9000: a TLS-inspecting proxy on this machine intercepts
+host port 9000 and answers a zero-byte HTTP 200 (E-004). With a `localhost`
+host, Medusa no longer force-enables SSL, so the SSL handling in E-001 becomes
+a no-op.
 
 ```bash
 npm install --legacy-peer-deps
@@ -69,11 +46,32 @@ npx medusa user -e you@example.com -p <password>
 cd ../.. && npm run backend:dev
 ```
 
-**This is exclusive with the local dev container.** `node_modules/` sits on the
-bind mount and holds native bindings for one platform only: installing on the
-host replaces the Linux bindings with Darwin ones and breaks the container,
-and vice versa. Switching back means re-running `npm install` inside it.
-Codespaces is unaffected — it has its own tree. See E-005.
+The admin dashboard is then at <http://127.0.0.1:9009/app> — use `127.0.0.1`,
+not `localhost`, which resolves to `::1` first on macOS.
+
+### In GitHub Codespaces
+
+[.devcontainer/](.devcontainer/) defines the app container plus Postgres 16 and
+Redis 7. It exists because the author's work machine has no admin rights and
+has restricted network access, and it is used occasionally.
+
+Creating the codespace installs dependencies and copies `.env.template` to
+`.env` if you don't already have one, so start at `db:migrate`:
+
+```bash
+cd apps/backend
+npx medusa db:migrate                   # schema + initial seed data
+npx medusa user -e you@example.com -p <password>
+cd ../.. && npm run backend:dev
+```
+
+The backend listens on port 9000 there. Reach the admin through the forwarded
+URL from the **PORTS** panel, not `localhost`; it looks like
+`https://<codespace>-9000.app.github.dev/app`.
+
+Migrations and the admin user are per-database, so both steps are needed on any
+machine with a fresh database. Seed data is applied by the `initial-data-seed`
+migration script during `db:migrate` — there is no separate seed command.
 
 ## Common tasks
 
@@ -101,7 +99,7 @@ holds the working non-secret values and documents each variable.
 
 | Variable | Notes |
 |---|---|
-| `DATABASE_URL` | In the devcontainer the host is the compose service name `postgres`, not `localhost` |
+| `DATABASE_URL` | Natively `localhost:5434`. In Codespaces the host is the compose service name `postgres`, not `localhost` |
 | `DATABASE_SSL` | `true` only for managed Postgres requiring TLS. See Notes |
 | `STORE_CORS` / `ADMIN_CORS` / `AUTH_CORS` | Comma-separated. An entry wrapped in slashes is parsed as a regular expression |
 | `JWT_SECRET` / `COOKIE_SECRET` | Throwaway local defaults — regenerate before exposing this anywhere |
@@ -110,23 +108,25 @@ holds the working non-secret values and documents each variable.
 
 **SSL is disabled by default, deliberately.** Medusa infers SSL from the
 database URL and force-enables it for any host that is not `localhost` or
-`127.0.0.1`. In the devcontainer, Postgres is reached as `postgres`, so it gets
+`127.0.0.1`. In Codespaces, Postgres is reached as `postgres`, so it gets
 misclassified as a remote managed database — while the `postgres:16-alpine`
 image serves no SSL. [medusa-config.ts](apps/backend/medusa-config.ts) therefore
-sets `databaseDriverOptions` explicitly. Set `DATABASE_SSL=true` when deploying
-against a database that does require TLS.
+sets `databaseDriverOptions` explicitly. Natively the host is `localhost`, the
+inference is correct, and both mechanisms are inert — but still required for
+Codespaces, so neither may be removed (E-001). Set `DATABASE_SSL=true` when
+deploying against a database that does require TLS.
 
-**The devcontainer exports `DATABASE_URL`.** dotenv does not override variables
-already present in the environment, so inside the container the value in
-`.env` is ignored and the one from
+**In Codespaces, compose exports `DATABASE_URL`.** dotenv does not override
+variables already present in the environment, so inside the container the value
+in `.env` is ignored and the one from
 [docker-compose.yml](.devcontainer/docker-compose.yml) wins. Change it there,
-and rebuild the container for it to take effect.
+and rebuild the container for it to take effect. Natively there is no such
+export and `apps/backend/.env` is authoritative.
 
-**Redis is running but unused.** Medusa reads `projectConfig.redisUrl`, which is
-not set, so it logs `redisUrl not found` and uses in-memory implementations for
-caching, events, and locking. That is fine for development. To actually use the
-Redis service, set `redisUrl` in `medusa-config.ts` and configure the
-corresponding modules.
+**In Codespaces, Redis runs but is unused; natively no Redis runs at all.**
+Medusa reads `projectConfig.redisUrl`, which is not set in either mode, so it
+logs `redisUrl not found` and uses in-memory implementations for caching,
+events, and locking. That is deliberate (D-006), not a misconfiguration.
 
 ## Troubleshooting
 
