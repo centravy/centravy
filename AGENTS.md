@@ -17,6 +17,10 @@ Frontends are thin clients over the Medusa API.
 **Architecture rule: the backend is always the middleman.** Nothing ever
 happens directly between a frontend and an external service.
 
+Backend-specific context — environment, Medusa gotchas, database commands —
+lives in [`apps/backend/AGENTS.md`](./apps/backend/AGENTS.md). Read it before
+touching anything under `apps/backend/`.
+
 ## Working with the Author
 
 The author is a senior AI/ML engineer (Python, MLOps, RAG) learning TypeScript,
@@ -39,121 +43,20 @@ task.**
   it went and why.
 - Deliver files as complete contents with their path, not terminal heredocs.
 
-## This Repo's Environment
-
-Facts specific to this project and not visible from the code.
-
-- **Two development modes, and they are mutually exclusive locally.** Either
-  the devcontainer, or Medusa running natively on the host against a local
-  Postgres. `node_modules/` lives on the bind mount and carries native bindings
-  for one platform only, so installing for one mode breaks the other. Check
-  which mode you are in before running anything: `ls node_modules/@swc/` shows
-  `core-darwin-arm64` (native) or `core-linux-arm64-gnu` (container).
-  Codespaces has its own tree and is never affected. See E-005.
-- **In the devcontainer** (`typescript-node:22-bookworm`), with
-  Postgres 16 and Redis 7 as docker-compose siblings. Their hosts are the
-  compose service names `postgres` and `redis` — **not `localhost`**. One
-  `.devcontainer/` serves both GitHub Codespaces and a local container on
-  Docker or OrbStack: same service names, same URLs, nothing to reconfigure.
-  Codespaces exists because the author's work machine has no admin rights and
-  has restricted network access; local is the default on his own machine.
-- **The compose file mounts the repo, not its parent** —
-  `..:/workspaces/centravy`, not the stock template's `../..:/workspaces`, which
-  locally would expose every sibling checkout to the container. See E-002.
-- **A fresh container installs dependencies and seeds `.env` itself** via
-  `postCreateCommand`. The `cp -n` never clobbers, so an existing `.env`
-  survives a rebuild.
-- **The machine sits behind a TLS-inspecting proxy, and this breaks builds but
-  not runtime.** OrbStack injects the host trust store into *running*
-  containers, so `docker run ... curl https://...` returns 200 — but
-  **BuildKit does not**, so the same call inside a `docker build` fails with
-  `curl: (60) ... unable to get local issuer certificate`. Devcontainer
-  **features install at build time**, which is why they are the thing that
-  breaks. The app image therefore comes from `${DEVCONTAINER_BASE_IMAGE:-...}`,
-  pointed by the gitignored `.devcontainer/.env` at a locally built image that
-  carries the proxy CA roots, whose build context lives outside the repo in
-  `~/.centravy-devcontainer/`. **Never commit the CA — the repository is
-  public.** See E-003.
-- **The same proxy swallows host port 9000 at runtime.** It accepts the
-  connection, answers `200 Connection Established` with a `Proxy-Agent` header,
-  then sends no body — so the browser shows `ERR_EMPTY_RESPONSE` and a 200 with
-  zero bytes while the backend is healthy inside the container. The compose file
-  publishes `${APP_HOST_PORT:-9000}:9000`; locally `.devcontainer/.env` sets
-  9009. Reach the admin at **`http://127.0.0.1:9009/app`** — `127.0.0.1`, *not*
-  `localhost`, which resolves to `::1` first on macOS and does not carry.
-  Medusa's startup banner says `http://localhost:9000/app`: correct inside the
-  container, wrong on the host in both the address and the port. See E-004.
-- **Zed reporting `DevContainerScriptsFailed` does not mean the container is
-  broken.** The `postCreateCommand` exits 0 when run directly, and the container
-  comes up fully usable. Verify before chasing it.
-- **Postgres serves no SSL, and Medusa force-enables SSL for any host that
-  isn't `localhost`/`127.0.0.1`.** The host is `postgres`, so the inference is
-  wrong and migrations fail with a *misleading* connection timeout — the real
-  error is swallowed by the migration pool. Two mechanisms compensate and
-  **both are intentional**: `?sslmode=disable` in the `DATABASE_URL` exported by
-  `.devcontainer/docker-compose.yml`, and the `databaseDriverOptions` block in
-  `medusa-config.ts`. Do not remove either as redundant. See E-001.
-- **Trust no Medusa database error at face value.** "Connection timed out" or
-  "pool is probably full" during `db:migrate` is almost always a swallowed
-  connection error, most often SSL.
-- **The devcontainer exports `DATABASE_URL` and `REDIS_URL`.** `loadEnv` does
-  not override a variable already present in the environment, so
-  `apps/backend/.env` is *ignored* for those keys inside the container. Editing
-  `.env` and expecting an effect is a trap — change
-  `.devcontainer/docker-compose.yml` and rebuild, or export the variable for a
-  single command.
-- **Redis runs but Medusa does not use it yet.** `projectConfig.redisUrl` is
-  unset, so Medusa logs `redisUrl not found` and falls back to in-memory
-  caching, events, and locking. Deliberate current state, not a
-  misconfiguration. See D-006.
-- **Named Docker volumes survive a devcontainer rebuild.** Rebuilding does not
-  reset the database; that requires removing the `centravy-pgdata` volume
-  explicitly.
-- **Backend-only for now.** `apps/supplier-portal/` and `apps/catalog/` are
-  planned React + Vite apps that do not exist yet. Check before referencing
-  them; never scaffold them unasked.
-- **Admin dashboard is on container port 9000, path `/app`.** In Codespaces,
-  the forwarded URL from the PORTS panel. Locally the *host* port may differ:
-  the proxy swallows host port 9000, so `.devcontainer/.env` remaps it and the
-  working URL is <http://127.0.0.1:9009/app>. `404` means the port isn't
-  forwarded; `502` means the backend is restarting. See E-004.
-- **A zero-byte HTTP 200 from the host is the proxy, not the backend.** Checking
-  only the status code (`curl -o /dev/null -w "%{http_code}"`) *passes* while
-  nothing works — the giveaway is a `Proxy-Agent` header in the response and
-  `size_download=0`. Always measure the body size. The same request run inside
-  the container is the control.
-- **Run `node`, `npm` and `npx` only where `node_modules` was installed.**
-  It sits on the bind mount and is visible from both sides, but it holds
-  bindings for one platform. In devcontainer mode that is
-  `@swc/core-linux-arm64-gnu`, and the same tree on macOS fails with
-  `Cannot find module './swc.darwin-arm64.node'`; in native mode it is the
-  mirror image. Editor type-checking works either way, because `.d.ts` files are
-  platform-independent, so only *execution* breaks. Running `npm install` in the
-  wrong place appears to fix it and breaks the other mode instead. See E-005.
-- **Codespaces quota is limited** (~30h/month on 4 cores). Don't leave
-  long-running processes idling.
-
-## Directory Structure
+## Repo Layout
 
 ```text
 .
 ├── apps/
-│   └── backend/                  # Medusa application
-│       ├── medusa-config.ts      # DB URL, SSL, CORS, secrets, module registration
-│       └── src/
-│           ├── admin/            # Admin dashboard extensions (routes/, widgets/)
-│           ├── api/              # File-based routes: api/admin/*, api/store/*
-│           ├── jobs/             # Scheduled jobs
-│           ├── links/            # Module links (defineLink)
-│           ├── modules/          # Custom modules (models + service + migrations)
-│           ├── subscribers/      # Event subscribers
-│           └── workflows/        # Workflows and steps
+│   └── backend/                  # Medusa application — see its own AGENTS.md
 ├── docs/
 │   └── decisions.md              # ADRs — reasoning behind architectural choices
-├── .devcontainer/                # devcontainer.json + docker-compose.yml
-├── eslint.config.ts              # @medusajs/eslint-plugin recommended
-└── turbo.json                    # Task graph
+├── openspec/                     # Specs and change proposals — see Spec Workflow
+└── .devcontainer/
 ```
+
+`apps/supplier-portal/` and `apps/catalog/` are planned React + Vite apps that
+**do not exist yet**. Check before referencing them; never scaffold them unasked.
 
 Each app may have its own nested `AGENTS.md`; agents read the nearest one in the
 tree. Put app-specific context there rather than expanding this file.
@@ -164,33 +67,15 @@ Run from the repo root unless noted. Package manager is **npm** (npm workspaces,
 `package-lock.json`). Never introduce a second lockfile.
 
 ```bash
-npm run dev                       # all apps via turbo
-cd apps/backend && npm run dev    # backend only — port 9000, admin at /app
+npm run dev      # all apps via turbo
 npm run build
 npm run lint
 ```
 
-### Database
-
-```bash
-cd apps/backend
-npx medusa db:generate <module-name>   # generate migrations for a custom module
-npx medusa db:migrate                  # run migrations
-npx medusa user -e <email> -p <password>
-```
-
-An admin user is not created automatically — `medusa user` is a required manual
-step on every fresh database.
-
-The starter's seed lives at `src/migration-scripts/initial-data-seed.ts` and runs
-automatically as part of `db:migrate` — that is where the demo regions, products
-and sales channels came from. Migration scripts are tracked in the
-`script_migrations` table and never run twice, so there is no re-seed command and
-no standalone seed script. Don't add one.
+Backend-only commands, including everything database-related, are in
+`apps/backend/AGENTS.md`.
 
 ## Invariants
-
-Non-negotiable. Violating one is a bug, not a style choice.
 
 - **No direct DB access.** Always go through the module's service. Never write
   raw SQL or import a DB client in application code.
@@ -217,7 +102,8 @@ Non-negotiable. Violating one is a bug, not a style choice.
 - **Prices are integers, in cents, everywhere this project owns the storage.**
   Supplier price fields, custom module payloads, frontend display math.
   Medusa's own pricing module stores decimal amounts (`model.bigNumber()`) —
-  never convert at that boundary. See D-013. Conversion to a display string happens at render time only.
+  never convert at that boundary. See D-013. Conversion to a display string
+  happens at render time only.
 - **API errors are thrown as `MedusaError`.** Never return `{ error: ... }`, and
   never `res.status(4xx)` — throw `MedusaError.Types.NOT_FOUND` /
   `INVALID_DATA` and let the framework map it to a status.
@@ -225,55 +111,18 @@ Non-negotiable. Violating one is a bug, not a style choice.
   the list route, the detail route, and the update response. See D-003.
 - **Naming:** `snake_case` for DB columns and API payloads, `camelCase` for TS
   variables and functions, `PascalCase` for types and classes, `kebab-case` for
-  filenames. `kebab-case` for workflow and step identifiers: a step id matches its
-  filename, a workflow id matches its directory — the workflow itself is always
-  `index.ts`.
+  filenames. `kebab-case` for workflow and step identifiers: a step id matches
+  its filename, a workflow id matches its directory — the workflow itself is
+  always `index.ts`.
 - **No new npm dependency without asking.** Ever.
 - **Look before you write.** Before creating a module, route, link, or admin
   page, read the existing equivalent and follow its shape:
-  - module → `src/modules/supplier/`
-  - admin route → `src/api/admin/suppliers/route.ts`
+  - module → `apps/backend/src/modules/supplier/`
+  - admin route → `apps/backend/src/api/admin/suppliers/route.ts`
 - **Use `export` / `export default`, never `module.exports`.**
   `medusa-config.ts` uses CommonJS because it ships that way — it is not a
   model to copy.
 - **No emojis** in code, comments, or commit messages.
-
-## Medusa 2.0 Gotchas
-
-Hard-won; re-check them on every generated diff.
-
-- Import `MedusaRequest` / `MedusaResponse` from `@medusajs/framework/http`
-  **without** the `type` keyword.
-- `query.graph` linked relation names are singular on the non-`isList` side
-  and pluralized on the `isList: true` side — `product.*` from a one-relation,
-  `products.*` from a many-relation, not singular unconditionally. The
-  singular name is not a uniqueness guarantee. See D-016.
-- `MedusaService({ Supplier })` auto-generates **pluralized** method names:
-  `listSuppliers`, `createSuppliers`, `updateSuppliers`.
-- `delete<Models>` (`deleteSuppliers`) is a **hard** delete returning
-  `Promise<void>` — nothing can undo it. The restorable pair is
-  `softDelete<Models>` + `restore<Models>`. A step whose compensation must put
-  the row back has to soft-delete.
-- DML generates **partial** unique indexes (`WHERE deleted_at IS NULL`), so a
-  soft-deleted row does not block re-creating one with the same unique value.
-- A row read back from the database types a nullable column as `string | null`,
-  while a validated update body types the same field `string | undefined`. A
-  compensation payload built from a read needs its own type; reusing the step's
-  input type fails to compile.
-- Products require at least one option and one variant at creation.
-- Editing a module's model without running `npx medusa db:generate <module>`
-  leaves the migration missing — the change silently never applies.
-- A custom module must be registered in `medusa-config.ts` under `modules` or it
-  does not exist: no service, no migrations.
-- `query.graph()` cannot filter by a property on a *linked* module — only on
-  the base model's own fields. Filtering across a link (e.g. products by
-  supplier) needs `query.index()` instead, with the linked property marked
-  `filterable` in the link definition. See `src/links/product-supplier.ts`.
-- `query.graph()`'s return type for a custom module's entity is inferred from
-  its DML model, which knows nothing about fields a link added — core-shipped
-  links carry pre-built type augmentation, a project's own links don't. The
-  linked field needs its own local type and a cast on the result, the same
-  way a compensation payload needs its own type (previous gotcha).
 
 ## Code Style
 
@@ -287,6 +136,39 @@ Hard-won; re-check them on every generated diff.
 - Prefer explicit validation of environment variables over the non-null
   assertion (`process.env.X!`). A server should refuse to start on incomplete
   config rather than fail on the first request.
+- A starter README under `src/` documents the framework, not this project.
+  This file wins.
+
+## Spec Workflow
+
+Behaviour is specified before it is built, using OpenSpec (`openspec/`).
+
+- `openspec/specs/<domain>/spec.md` describes how the system behaves **today**.
+  Read the relevant domain spec before changing anything it covers.
+- `openspec/changes/<slug>/` holds one in-flight change: `proposal.md`,
+  `design.md`, `tasks.md`, and a delta spec under `specs/`. Archiving merges the
+  delta into the main specs.
+- Change slugs match the Linear issue and the branch: `cv-17-...`.
+- **`design.md` is local and disposable; an ADR is permanent.** If a decision
+  outlives the change, it belongs in `docs/decisions.md` and `design.md` cites
+  it by number. Never restate an ADR's reasoning in a change folder.
+- Scenarios describe observable behaviour — an HTTP response, a rendered
+  element — never internal state. One scenario should map to one test.
+- `openspec/` is committed and the **repository is public**: no secrets, no
+  real tokens, no customer data in a spec.
+
+## Git Workflow
+
+- One Linear issue = one branch. Branch names: `cv-16-...`. Several commits per
+  branch are fine; each must be a coherent unit that builds and lints.
+- Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`).
+- **Commit before any destructive or large generative operation.**
+- Run `git status --short | grep -E "\.env|node_modules"` before every commit.
+  **The repository is public** — a leaked `.env` is a leaked secret.
+- **Propose a commit message whenever a unit of work leaves files changed, and
+  never run `git commit`.** Imperative subject under ~72 characters, body
+  explaining why rather than restating the diff. The author reads the diff and
+  commits.
 
 ## MVP Scope
 
@@ -310,116 +192,25 @@ Architectural decisions and their reasoning live in
 an area it covers — D-002 in particular, since "improving" token auth into real
 auth is exactly the drift it exists to prevent.
 
-## Medusa Skills
-
-The `medusa-dev` plugin ships skills as local markdown under
-`~/.claude/plugins/cache/medusa/medusa-dev/*/skills/`. They work offline and
-do not depend on any server. The `MedusaDocs` MCP server that shipped with the
-plugin is disabled (HTTP 402, paid plan) — the skills are unaffected.
-
-**Before presenting a plan that touches any of these, read the matching
-reference file and say in the plan which one you read:**
-
-| Touching | Read |
-|---|---|
-| workflows, steps, compensation | `building-with-medusa/reference/workflows.md` |
-| `defineLink`, cross-module data | `building-with-medusa/reference/module-links.md` |
-| API routes | `building-with-medusa/reference/api-routes.md` |
-| models, migrations | `building-with-medusa/reference/data-models.md` |
-| subscribers, events | `building-with-medusa/reference/subscribers-and-events.md` |
-| anything under `src/admin/` | `building-admin-dashboard-customizations/SKILL.md` |
-| querying data (`query.graph`, `query.index`) | `building-with-medusa/reference/querying-data.md` |
-| auth, protected routes, actor types | `building-with-medusa/reference/authentication.md` |
-| throwing/handling errors | `building-with-medusa/reference/error-handling.md` |
-| custom modules (service, migrations) | `building-with-medusa/reference/custom-modules.md` |
-| debugging Medusa-specific failures | `building-with-medusa/reference/troubleshooting.md` |
-| workflow hooks | `building-with-medusa/reference/workflow-hooks.md` |
-
-**These skills encode Medusa conventions, not Centravy's.** Where they
-conflict with the Invariants above, this file wins — but say so in the plan
-rather than silently picking one.
-
-## Git Workflow
-
-- One Linear issue = one branch = one commit scope. Branch names: `cv-16-...`.
-- Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`).
-- **Commit before any destructive or large generative operation.**
-- Run `git status --short | grep -E "\.env|node_modules"` before every commit.
-  **The repository is public** — a leaked `.env` is a leaked secret.
-- Never commit without the author having read the diff.
-- **Propose a commit message whenever a unit of work leaves files changed**,
-  and never run `git commit`. Imperative subject under ~72 characters, body
-  explaining why rather than restating the diff. The author reads the diff
-  and commits.
-
-## Common Mistakes
-
-- Using `localhost` for Postgres or Redis from inside the devcontainer.
-- Reading a failed devcontainer *feature* install as a network outage or a
-  broken feature. It is almost always the proxy CA missing from BuildKit.
-  The tell is the asymmetry: the same `curl` succeeds at runtime and fails
-  during a build.
-- Running `npx medusa ...` or `npm install` from a macOS terminal instead of
-  inside the container. The prompt is the tell: `node@<hash>:/workspaces/centravy$`
-  inside, `<user>@<machine> %` outside.
-- Using `localhost` rather than `127.0.0.1`, or port 9000 rather than the
-  published host port, to reach the backend from the host.
-- Reading a 200 with an empty body as a backend problem. Check the response
-  headers for a `Proxy-Agent` first, and compare against the same request made
-  inside the container.
-- Measuring an HTTP check with `curl -o /dev/null -w "%{http_code}"` alone. A
-  proxy tunnel returns 200 with zero bytes; always assert on `%{size_download}`
-  too.
-- Removing the SSL handling in `medusa-config.ts` or `docker-compose.yml` as
-  redundant.
-- Editing `apps/backend/.env` to change `DATABASE_URL` inside the devcontainer —
-  the exported environment variable wins and the edit appears to do nothing.
-- Editing a model without running `db:generate`.
-- Reaching into another module's service or model directly instead of using a
-  link.
-- Putting business logic in a route handler instead of a workflow.
-- Designing a route's response shape, status codes, or method from REST
-  principles when core Medusa already ships an equivalent route — check its real
-  response first.
-- Using PATCH or PUT for an update. Core uses POST on the detail path.
-- Treating a starter README under `src/` as a statement of this project's
-  conventions. They ship with `create-medusa-app` and document the framework;
-  AGENTS.md wins.
-- Assuming `deleteX` soft-deletes, and writing a compensation that cannot run.
-- Storing a price as a float or a formatted string.
-- Creating a helper that duplicates an existing one three folders away — search
-  first.
-- Introducing an abstraction for a single use case.
-- Adding a dependency in passing without flagging it.
-- Assuming a fresh database has an admin user.
-- Referencing or scaffolding `apps/supplier-portal/` before it exists.
-- Silencing a `@medusajs/*` ESLint rule instead of fixing the pattern.
-
-## Off-Limits
-
-- `apps/backend/.medusa/`, `dist/`, `.turbo/` — build output, regenerated.
-- `package-lock.json` — never hand-edit or delete; it changes only as a side
-  effect of an npm command.
-- `.env` / `.env.local` — never commit, print, or copy secret values out of
-  them. Document new variables in `.env.template` instead.
-- Existing migrations in `src/modules/*/migrations/` — add a new one rather than
-  rewriting one that may already have run.
-- Destructive DB commands (drops, resets) — never without explicit confirmation.
-
 ## Build Order
 
 P6 Infra → P1/M1 Data Foundation → P1/M2 Submission Flow →
 P1/M3a Token auth → P1/M4a Submission form → P3 Multi-channel →
 P4 Order routing → P2 AI pipeline → P5 Billing.
 
-Current: P1/M1. Supplier module, admin CRUD routes and their workflows
-exist. The Product↔Supplier link and the admin pages do not yet.
+Task-level state is not tracked in this repo. Task detail lives in Linear
+(team CV), reachable through the Linear MCP. When a task references a
+CV-number, read the issue before planning. The `mode` label (T / R / D) is the
+default answer to whether you write the code at all; an instruction in the
+prompt overrides it. Never resolve the conflict silently — name it in the plan.
 
-Task-level tracking lives in Linear, not in this repo. If this paragraph
-contradicts what you find in the code, trust the code and say so.
+## Off-Limits
 
-Task detail lives in Linear (team CV), reachable through the Linear MCP.
-When a task references a CV-number, read the issue before planning. The `mode`
-label (T / R / D) is the default answer to whether you write the code at all;
-an instruction in the prompt overrides it. Never resolve the conflict
-silently — name it in the plan.
+- `package-lock.json` — never hand-edit or delete; it changes only as a side
+  effect of an npm command.
+- `.env` / `.env.local` — never commit, print, or copy secret values out of
+  them. Document new variables in `.env.template` instead.
+- Build output: `apps/backend/.medusa/`, `dist/`, `.turbo/`.
+- Existing migrations in `apps/backend/src/modules/*/migrations/` — add a new
+  one rather than rewriting one that may already have run.
+- Destructive DB commands (drops, resets) — never without explicit confirmation.
