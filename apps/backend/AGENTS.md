@@ -37,8 +37,13 @@ step on every fresh database.
 The starter's seed lives at `src/migration-scripts/initial-data-seed.ts` and runs
 automatically as part of `db:migrate` — that is where the demo regions, products
 and sales channels came from. Migration scripts are tracked in the
-`script_migrations` table and never run twice, so there is no re-seed command and
-no standalone seed script. Don't add one.
+`script_migrations` table and never run twice, so there is no re-seed command.
+Don't duplicate seed data into that mechanism expecting it to replay.
+
+A demo seed is the other mechanism, and the two must not be merged. Because a
+migration script cannot replay, anything that has to be re-run before every
+rehearsal — the demo fixture set — has to be a standalone script, and it has to
+be idempotent so running it twice does not duplicate rows.
 
 ## Where This Runs
 
