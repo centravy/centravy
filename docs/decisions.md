@@ -505,6 +505,41 @@ network access. That constraint has not gone away.
 - Any environment fact recorded from here on must state which mode it concerns.
   An unqualified environment fact goes stale the moment the mode changes.
 
+
+## D-018 — Admin UI data access goes through js-sdk and react-query
+
+**Date:** 2026-08-28 · **Status:** decided · **Scope:** design · **Linear:** CV-17
+
+**Decision.** Admin dashboard extensions fetch through `@medusajs/js-sdk` with
+react-query. No hand-rolled `fetch`, no bare `useState` + `useEffect` data
+loading. This applies to every page and widget under `src/admin/`.
+
+**Why.** This is D-007 applied to the frontend: core Medusa's own dashboard does
+it, so matching it means our pages behave like core's — same cache, same
+invalidation on mutation, same error surface. The `medusa-dev` skill states the
+same rule.
+
+The alternative was live for one ticket. CV-17 was originally scoped as the place
+to learn React by hand, which argued for plain `fetch` so the mechanism stayed
+visible. That argument no longer applies: learning is handled outside the tickets,
+and tickets carry conventions only.
+
+The concrete cost of `fetch` shows up at the first mutating screen. Approve and
+reject (CV-21, CV-22) have to refresh the list after a write, which means cache
+invalidation — which means react-query, or a hand-rolled version of it. Writing
+that twice is the expensive path.
+
+**What we lose.** `fetch` was one import and no dependency; react-query adds a
+concept an unfamiliar reader has to know before they can follow a page. The
+mechanics the tickets used to expose — when the request fires, what the
+intermediate state is, why `useEffect` rejects an async function — are now hidden
+behind a hook. They are still worth understanding, but that belongs outside the
+repo.
+
+**Note.** `fetch` not rejecting on 4xx/5xx remains true underneath; react-query
+surfaces an error only if the fetcher throws, and the js-sdk does that for us.
+
+
 ---
 
 

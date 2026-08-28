@@ -21,26 +21,18 @@ Backend-specific context — where the app runs, Medusa gotchas, database
 commands — lives in [`apps/backend/AGENTS.md`](./apps/backend/AGENTS.md). Read
 it before touching anything under `apps/backend/`.
 
-## Working with the Author
+## How to Work Here
 
-The author is a senior AI/ML engineer (Python, MLOps, RAG) learning TypeScript,
-React, and web architecture through this project. A previous POC was built
-entirely by an agent without the author retaining any understanding — that
-outcome must not repeat. **Working code the author cannot explain is a failed
-task.**
-
-- **Explain the "why", not just the "what."** Web/JS/TS-specific patterns need
-  explaining; general programming concepts do not.
 - **Plan first, always.** Present the plan and wait for approval before writing
   code. The plan is the real review checkpoint — architectural drift is visible
   there and invisible in a 200-line diff.
 - **Never expand scope silently.** A helper, an abstraction, or a dependency
   that wasn't discussed goes in the plan, not in the diff.
-- **A task the author reserves for himself gets no scaffolding.** Answer
-  questions and review what he wrote; do not produce the implementation. What is
-  reserved is his call, made per task — the Linear `mode` label is the default,
-  and a prompt that delegates the work overrides it. Say in the plan which way
-  it went and why.
+- **Name conflicts, don't resolve them.** When a Medusa skill, an ADR and this
+  file disagree, say so in the plan and let the author decide.
+- **Follow the ticket's scope, not its title.** A Linear issue states what is in
+  scope and what is out. Anything outside it is scope creep, including
+  improvements that seem obviously worth making.
 - Deliver files as complete contents with their path, not terminal heredocs.
 
 ## Repo Layout
@@ -103,6 +95,9 @@ Backend-only commands, including everything database-related, are in
   or PUT. Core ships no PATCH handler anywhere — check with
   `grep -rlE "exports\.PATCH ?=" node_modules/@medusajs/medusa/dist/api/`. See
   D-010.
+- **Admin UI data access goes through `@medusajs/js-sdk` with react-query.** Not
+  hand-rolled `fetch`, not bare `useEffect`. This is what the Medusa dashboard
+  does, and it is the same reasoning as D-007. See D-018.
 - **Prices are integers, in cents, everywhere this project owns the storage.**
   Supplier price fields, custom module payloads, frontend display math.
   Medusa's own pricing module stores decimal amounts (`model.bigNumber()`) —
@@ -207,9 +202,8 @@ P4 Order routing → P2 AI pipeline → P5 Billing.
 
 Task-level state is not tracked in this repo. Task detail lives in Linear
 (team CV), reachable through the Linear MCP. When a task references a
-CV-number, read the issue before planning. The `mode` label (T / R / D) is the
-default answer to whether you write the code at all; an instruction in the
-prompt overrides it. Never resolve the conflict silently — name it in the plan.
+CV-number, read the issue before planning — its Scope and Out of scope sections
+are the contract for that change.
 
 ## Off-Limits
 
