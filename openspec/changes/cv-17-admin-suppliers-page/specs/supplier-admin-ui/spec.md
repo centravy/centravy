@@ -70,8 +70,7 @@ independently of the others, and no two SHALL be rendered at the same time.
 ### Requirement: A list row links to that supplier's detail page
 
 Each row of the supplier list SHALL contain a link to the detail page of the
-supplier it shows. Activating that link SHALL navigate within the dashboard,
-without a full page reload.
+supplier it shows. Activating that link SHALL navigate within the dashboard, without a full page reload.
 
 #### Scenario: Operator activates a row's link
 
@@ -85,6 +84,12 @@ without a full page reload.
 - **WHEN** the supplier list page is rendered with suppliers present
 - **THEN** each row contains an anchor element whose target is that supplier's
   detail path, reachable by keyboard
+
+#### Scenario: The link looks like a link
+
+- **WHEN** the supplier list page is rendered with suppliers present
+- **THEN** the linked cell is visually distinguishable from the non-interactive
+  cells in the same row
 
 ### Requirement: Supplier detail page renders one supplier's fields
 
