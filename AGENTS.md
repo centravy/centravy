@@ -17,9 +17,9 @@ Frontends are thin clients over the Medusa API.
 **Architecture rule: the backend is always the middleman.** Nothing ever
 happens directly between a frontend and an external service.
 
-Backend-specific context — environment, Medusa gotchas, database commands —
-lives in [`apps/backend/AGENTS.md`](./apps/backend/AGENTS.md). Read it before
-touching anything under `apps/backend/`.
+Backend-specific context — where the app runs, Medusa gotchas, database
+commands — lives in [`apps/backend/AGENTS.md`](./apps/backend/AGENTS.md). Read
+it before touching anything under `apps/backend/`.
 
 ## Working with the Author
 
@@ -51,8 +51,7 @@ task.**
 │   └── backend/                  # Medusa application — see its own AGENTS.md
 ├── docs/
 │   └── decisions.md              # ADRs — reasoning behind architectural choices
-├── openspec/                     # Specs and change proposals — see Spec Workflow
-└── .devcontainer/
+└── .devcontainer/                # GitHub Codespaces only — not used locally
 ```
 
 `apps/supplier-portal/` and `apps/catalog/` are planned React + Vite apps that
@@ -139,24 +138,6 @@ Backend-only commands, including everything database-related, are in
 - A starter README under `src/` documents the framework, not this project.
   This file wins.
 
-## Spec Workflow
-
-Behaviour is specified before it is built, using OpenSpec (`openspec/`).
-
-- `openspec/specs/<domain>/spec.md` describes how the system behaves **today**.
-  Read the relevant domain spec before changing anything it covers.
-- `openspec/changes/<slug>/` holds one in-flight change: `proposal.md`,
-  `design.md`, `tasks.md`, and a delta spec under `specs/`. Archiving merges the
-  delta into the main specs.
-- Change slugs match the Linear issue and the branch: `cv-17-...`.
-- **`design.md` is local and disposable; an ADR is permanent.** If a decision
-  outlives the change, it belongs in `docs/decisions.md` and `design.md` cites
-  it by number. Never restate an ADR's reasoning in a change folder.
-- Scenarios describe observable behaviour — an HTTP response, a rendered
-  element — never internal state. One scenario should map to one test.
-- `openspec/` is committed and the **repository is public**: no secrets, no
-  real tokens, no customer data in a spec.
-
 ## Git Workflow
 
 - One Linear issue = one branch. Branch names: `cv-16-...`. Several commits per
@@ -206,6 +187,11 @@ prompt overrides it. Never resolve the conflict silently — name it in the plan
 
 ## Off-Limits
 
+- **`npm audit fix`, and `npm audit fix --force` above all.** Nearly every
+  advisory is transitive through `@medusajs/*` and unfixable without upgrading
+  Medusa itself; `--force` would install `vite@8` and a `@medusajs/test-utils`
+  outside the stated range, breaking the admin bundler. Report an audit result,
+  never act on it. `npm audit --omit=dev` is the only number worth looking at.
 - `package-lock.json` — never hand-edit or delete; it changes only as a side
   effect of an npm command.
 - `.env` / `.env.local` — never commit, print, or copy secret values out of
