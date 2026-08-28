@@ -24,7 +24,7 @@ apps/backend/
 
 ```bash
 cd apps/backend
-npm run dev                            # port 9000, admin at /app
+npm run dev                            # native: 9009 · Codespaces: 9000; admin at /app
 
 npx medusa db:generate <module-name>   # generate migrations for a custom module
 npx medusa db:migrate                  # run migrations
@@ -73,7 +73,8 @@ A Codespaces answer given natively is worse than no answer.
   `redisUrl not found` and falls back to in-memory caching, events and locking.
   Deliberate current state, not a misconfiguration — whether a Redis is running
   on the host is irrelevant. See D-006.
-- Admin dashboard at `/app` on port 9000. **The machine sits behind a
+- Admin dashboard at `http://127.0.0.1:9009/app` — `PORT=9009` in
+  `apps/backend/.env`, read by the Medusa CLI. **The machine sits behind a
   TLS-inspecting proxy that has been observed swallowing host port 9000**: it
   answers `200 Connection Established` with a `Proxy-Agent` header and no body,
   which surfaces as `ERR_EMPTY_RESPONSE` in the browser and as a passing check in
