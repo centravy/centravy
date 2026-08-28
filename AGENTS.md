@@ -41,12 +41,14 @@ it before touching anything under `apps/backend/`.
 .
 ├── apps/
 │   └── backend/                  # Medusa application — see its own AGENTS.md
+│       └── integration-tests/    # HTTP tests against the routes — see D-011
 ├── docs/
 │   └── decisions.md              # ADRs — reasoning behind architectural choices
 ├── openspec/                     # Specs and change proposals — see Spec Workflow
 │   ├── config.yaml
 │   ├── specs/                    # How the system behaves today, by domain
 │   └── changes/                  # One folder per in-flight change
+├── README.md                     # Setup, natively and in Codespaces
 ├── .claude/                      # opsx slash commands and skills (generated)
 └── .devcontainer/                # GitHub Codespaces only — not used locally
 ```
