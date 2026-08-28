@@ -438,23 +438,45 @@ history entry rather than a property of the product.
 
 **Decision.** `product-supplier`'s `isList: true` on the product side controls
 query field naming only — `supplier.products` is an array, `product.supplier` a
-single object — and creates no database constraint. No unique index is added on
-`product_id`. The invariant is enforced at the write path: CV-19's submission
-workflow checks for an existing link before creating one, and fails loudly.
+single object — and creates no database constraint. This project adds no unique
+index on `product_id`, and does not rely on the link table having one of its
+own. The invariant is enforced at the write path: CV-19's submission workflow
+checks for an existing link before creating one, and fails loudly.
 
-**Why.** Verified during CV-16: `product_supplier`'s primary key is composite
-`(product_id, supplier_id)`, so nothing prevents one product linked to two
-suppliers. The failure mode is silent — with two such rows, `query.graph` on
-`product.supplier` returns one supplier rather than erroring, and which one is
-unspecified. That is exactly the question P4 order routing asks, and it needs
-exactly one answer.
+**Why — verified.** `isList: true` controls field naming and nothing else. The
+alias is pluralized on the `isList: true` side and singular on the other, so
+`supplier.products` is an array and `product.supplier` a single object. This is
+re-confirmable at any time by reading `defineLink`'s compiled source
+(`node_modules/@medusajs/utils/dist/modules-sdk/define-link.js`), which builds
+each side's alias as `isList ? pluralize(alias) : alias`. A singular field name
+is therefore a naming artefact, not a uniqueness guarantee.
+
+**Why — inferred, not yet observed.** Two claims below this line have no test,
+no erratum and no recorded measurement behind them:
+
+- that `product_supplier`'s primary key is composite `(product_id, supplier_id)`,
+  so nothing prevents one product linked to two suppliers. The link table is
+  created by `db:migrate` and has no committed migration file, so nothing in the
+  repo shows its schema.
+- that with two such rows, `query.graph` on `product.supplier` returns one
+  supplier rather than erroring, and which one is unspecified. No test creates a
+  second link row.
+
+Both are plausible and the ADR is written as if they hold, because the guard
+they justify is cheap and the failure they describe is silent. But they are
+inferences. **CV-19 owns settling them** — insert two link rows for one product,
+run the existing read path, and record the result there as an erratum. If
+`query.graph` throws, the write-path guard is a safety net behind a loud
+failure; if it silently picks one, the guard is the only thing standing between
+P4 order routing and a package sent to the wrong supplier. That is exactly the
+question P4 asks, and it needs exactly one answer.
 
 Multi-sourcing (the same physical product from two wholesalers, operator picks)
-is real business, Phase C at the earliest, and the composite PK is the correct
-long-term shape — a unique index would have to be dropped when that arrives.
-Meanwhile the MVP write path cannot produce a duplicate: each submission creates
-its own new product row, so two suppliers submitting the same sneaker produce two
-distinct products, not two links on one product.
+is real business, Phase C at the earliest, so an unconstrained link table is the
+correct long-term shape — a unique index would have to be dropped when that
+arrives. Meanwhile the MVP write path cannot produce a duplicate: each
+submission creates its own new product row, so two suppliers submitting the
+same sneaker produce two distinct products, not two links on one product.
 
 **What we lose.** Any code reading `product.supplier` may assume a single
 supplier, but only because CV-19 guarantees it, not because the schema does. Any
