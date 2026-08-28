@@ -148,7 +148,11 @@ Re-check these on every generated diff.
 - `query.graph()` cannot filter by a property on a *linked* module — only on the
   base model's own fields. Filtering across a link (e.g. products by supplier)
   needs `query.index()` instead, with the linked property marked `filterable` in
-  the link definition. See `src/links/product-supplier.ts`.
+  the link definition. **The repo has no `query.index()` example yet.**
+  `src/links/product-supplier.ts` marks nothing `filterable`, and the one
+  cross-link read, `src/api/admin/suppliers/[id]/products/route.ts`, uses
+  `query.graph`. So that file shows the unmarked case, not the marked one — the
+  first ticket that needs to filter across the link adds both.
 - `query.graph()`'s return type for a custom module's entity is inferred from its
   DML model, which knows nothing about fields a link added — core-shipped links
   carry pre-built type augmentation, a project's own links don't. The linked
