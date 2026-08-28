@@ -1,0 +1,43 @@
+schema: spec-driven
+
+context: |
+  Centravy — multi-supplier e-commerce orchestration on Medusa 2.0.
+  Backend is the single source of truth; frontends are thin clients.
+
+  AGENTS.md at the repo root is authoritative for architecture invariants,
+  scope and git workflow. apps/backend/AGENTS.md holds Medusa gotchas and
+  environment facts. Read both before drafting any artifact. Where they
+  conflict with a Medusa skill or with anything here, AGENTS.md wins — and
+  say so in the artifact rather than picking silently.
+
+  Architectural decisions live in docs/decisions.md (D-001.., E-001..).
+  Cite the ADR number instead of restating its reasoning.
+
+  Task detail lives in Linear, team CV, via the Linear MCP. A change named
+  cv-NN-* means: read issue CV-NN before writing the proposal. The issue's
+  mode label (T / R / D) says whether the author writes the code himself.
+
+  The author is a senior Python/ML engineer new to TypeScript and React.
+  Working code he cannot explain is a failed task.
+
+rules:
+  proposal:
+    - State explicitly what is out of scope for this change.
+    - Check the request against the MVP OUT list in AGENTS.md and refuse
+      scope creep rather than quietly including it.
+  specs:
+    - One scenario per observable behaviour — an HTTP response, a rendered
+      element. Never internal state.
+    - Each scenario should map to one integration test.
+  design:
+    - Reference existing ADRs by number. Propose a new ADR only when the
+      decision outlives this change, and grep docs/decisions.md for the
+      next free number rather than assuming one.
+  tasks:
+    - No task the author could not implement himself after reading it.
+
+operations:
+  apply:
+    guidance:
+      - Present the plan and wait for approval before writing code.
+      - Never run git commit. Propose a message instead.

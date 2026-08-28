@@ -51,6 +51,11 @@ task.**
 │   └── backend/                  # Medusa application — see its own AGENTS.md
 ├── docs/
 │   └── decisions.md              # ADRs — reasoning behind architectural choices
+├── openspec/                     # Specs and change proposals — see Spec Workflow
+│   ├── config.yaml
+│   ├── specs/                    # How the system behaves today, by domain
+│   └── changes/                  # One folder per in-flight change
+├── .claude/                      # opsx slash commands and skills (generated)
 └── .devcontainer/                # GitHub Codespaces only — not used locally
 ```
 
@@ -137,6 +142,27 @@ Backend-only commands, including everything database-related, are in
   config rather than fail on the first request.
 - A starter README under `src/` documents the framework, not this project.
   This file wins.
+
+## Spec Workflow
+
+Behaviour is specified before it is built, using OpenSpec. The slash commands
+(`/opsx:explore`, `/opsx:propose`, `/opsx:apply`, `/opsx:archive`) live in
+`.claude/`; `openspec/config.yaml` carries the project context injected into
+every artifact.
+
+- `openspec/specs/<domain>/spec.md` describes how the system behaves **today**.
+  Read the relevant domain spec before changing anything it covers.
+- `openspec/changes/<slug>/` holds one in-flight change: `proposal.md`,
+  `design.md`, `tasks.md`, and a delta spec under `specs/`. Archiving merges the
+  delta into the main specs and moves the folder to `changes/archive/`.
+- Change slugs match the Linear issue and the branch: `cv-17-...`.
+- **`design.md` is local and disposable; an ADR is permanent.** If a decision
+  outlives the change, it belongs in `docs/decisions.md` and `design.md` cites
+  it by number. Never restate an ADR's reasoning in a change folder.
+- Scenarios describe observable behaviour — an HTTP response, a rendered
+  element — never internal state. One scenario should map to one test.
+- `openspec/` is committed and the **repository is public**: no secrets, no real
+  tokens, no customer data in a spec. Use obviously fake values.
 
 ## Git Workflow
 
