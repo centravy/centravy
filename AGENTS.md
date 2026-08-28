@@ -151,8 +151,11 @@ every artifact.
   Read the relevant domain spec before changing anything it covers.
 - `openspec/changes/<slug>/` holds one in-flight change: `proposal.md`,
   `design.md`, `tasks.md`, and a delta spec under `specs/`. Archiving merges the
-  delta into the main specs and moves the folder to `changes/archive/`.
-- Change slugs match the Linear issue and the branch: `cv-17-...`.
+  delta into the main specs and moves the folder to `changes/archive/`, prefixed
+  with the archive date: `changes/archive/2026-08-28-cv-17-admin-suppliers-page/`.
+- Change slugs are `cv-NN-<short-slug>`, the same slug as the branch. The slug
+  shortens the Linear title rather than transcribing it — it drops the leading
+  verb, so CV-17 "Add admin Suppliers page" is `cv-17-admin-suppliers-page`.
 - **`design.md` is local and disposable; an ADR is permanent.** If a decision
   outlives the change, it belongs in `docs/decisions.md` and `design.md` cites
   it by number. Never restate an ADR's reasoning in a change folder.
@@ -163,8 +166,11 @@ every artifact.
 
 ## Git Workflow
 
-- One Linear issue = one branch. Branch names: `cv-16-...`. Several commits per
-  branch are fine; each must be a coherent unit that builds and lints.
+- One Linear issue = one branch. Branch names are `cv-NN-<short-slug>`, the same
+  slug as the change folder — `cv-16-product-supplier-link`. **Linear's generated
+  branch name is not the convention:** it carries a `salahchadli/` prefix and the
+  full title slug. Use the name above, not the one the issue offers. Several
+  commits per branch are fine; each must be a coherent unit that builds and lints.
 - Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`).
 - **Commit before any destructive or large generative operation.**
 - Run `git status --short | grep -E "\.env|node_modules"` before every commit.
